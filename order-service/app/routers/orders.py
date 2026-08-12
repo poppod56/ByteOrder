@@ -129,6 +129,7 @@ def _persist_order(
             order_id=order.id,
             menu_item_id=item_data.menu_item_id,
             menu_item_name=item_data.menu_item_name,
+            quantity=item_data.quantity,
             unit_price=unit_price,
         )
         db.add(item)
@@ -159,7 +160,7 @@ def _persist_order(
                 price_delta=delta,
             ))
 
-        line = line_total(unit_price, charged_deltas, option_deltas)
+        line = line_total(unit_price, charged_deltas, option_deltas, item_data.quantity)
         if line is not None:
             order_total += line
 
@@ -220,6 +221,7 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
         "items": [
             {
                 "name": oi.menu_item_name,
+                "quantity": oi.quantity,
                 "unit_price": oi.unit_price,
                 "ingredients": [
                     {"name": i.ingredient_name, "included": i.included, "price_delta": i.price_delta}
@@ -293,6 +295,48 @@ def get_history(date: str | None = None, db: Session = Depends(get_db), kitchen_
     else:
         q = q.filter(func.date(models.Order.created_at) == utcnow().date())
     return q.order_by(models.Order.created_at.desc()).all()
+
+
+@router.get("/by-table/{code}", response_model=list[schemas.OrderOut])
+def get_orders_for_table(
+    code: str,
+    db: Session = Depends(get_db),
+    kitchen_id: str = Depends(get_kitchen_id),
+):
+    """Today's orders for one table, for the customer app's "already ordered" list.
+
+    Keyed off the table's QR code rather than anything held in the browser, so the
+    list survives a reload, a flat battery or a second phone — and everyone sitting
+    at the table sees the same orders, which is the point of a shared table.
+
+    Scoped to today so a table does not accumulate last week's history, and
+    deliberately not filtered to active statuses: a customer should still see the
+    order they just collected.
+    """
+    table = db.query(models.Table).filter(
+        models.Table.kitchen_id == kitchen_id,
+        models.Table.code == code.strip().lower(),
+        models.Table.active.is_(True),
+    ).first()
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    orders = (
+        db.query(models.Order)
+        .filter(
+            models.Order.kitchen_id == kitchen_id,
+            models.Order.table_id == table.id,
+            func.date(models.Order.created_at) == utcnow().date(),
+        )
+        .order_by(models.Order.created_at.desc())
+        .all()
+    )
+    results = []
+    for order in orders:
+        out = schemas.OrderOut.model_validate(order)
+        out.queue_position = _queue_position(order, db)
+        results.append(out)
+    return results
 
 
 @router.get("/track/{public_id}", response_model=schemas.OrderOut)

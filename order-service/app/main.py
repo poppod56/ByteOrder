@@ -90,6 +90,8 @@ def _run_migrations():
         # an order placed before pricing existed simply has no total.
         conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS total INTEGER"))
         conn.execute(text("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_price INTEGER"))
+        # Existing lines were one unit each, which is exactly what the default gives.
+        conn.execute(text("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"))
         conn.execute(text("ALTER TABLE order_item_ingredients ADD COLUMN IF NOT EXISTS price_delta INTEGER NOT NULL DEFAULT 0"))
         conn.execute(text("ALTER TABLE order_item_options ADD COLUMN IF NOT EXISTS price_delta INTEGER NOT NULL DEFAULT 0"))
         # A duplicate label makes the printed ticket ambiguous, so the column is

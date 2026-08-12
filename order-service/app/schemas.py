@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class OrderItemIngredientIn(BaseModel):
@@ -18,6 +18,8 @@ class OrderItemOptionIn(BaseModel):
 class OrderItemIn(BaseModel):
     menu_item_id: int
     menu_item_name: str
+    # Bounded so a typo or a stuck stepper cannot book a thousand burgers.
+    quantity: int = Field(default=1, ge=1, le=99)
     ingredients: list[OrderItemIngredientIn] = []
     options: list[OrderItemOptionIn] = []
 
@@ -49,6 +51,7 @@ class OrderItemOut(BaseModel):
     id: int
     menu_item_id: int
     menu_item_name: str
+    quantity: int = 1
     unit_price: Optional[int] = None
     ingredients: list[OrderItemIngredientOut] = []
     options: list[OrderItemOptionOut] = []

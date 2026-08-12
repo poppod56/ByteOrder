@@ -54,7 +54,7 @@ def _format_order(order: dict) -> str:
         qty = item.get("quantity", 1)
         notes = item.get("notes") or ""
         unit = item.get("unit_price")
-        lines.append(f"  {qty}x {name}" + (f"   {_money(unit, currency)}" if unit is not None else ""))
+        lines.append(f"  {qty}x {name}" + (f"   {_money(unit, currency)} ea" if unit is not None else ""))
         if notes:
             lines.append(f"     * {notes}")
 

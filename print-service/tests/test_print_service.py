@@ -234,3 +234,66 @@ def test_process_order_success():
         call_args = mock_send.call_args
         payload = call_args[0][0]
         assert "text" in payload
+
+
+def test_format_order_shows_quantity_and_unit_price():
+    order = {
+        "order_number": "BO-006",
+        "customer_name": "Gina",
+        "currency": "THB",
+        "total": 36000,
+        "items": [{"name": "Burger", "quantity": 3, "unit_price": 12000, "ingredients": [], "options": []}],
+    }
+    with patch("app.main.get_kitchen_name", return_value="Kitchen"):
+        text = format_order(order, "k1")["text"]
+
+    assert ">> 3x Burger" in text
+    assert "120.00 THB ea" in text
+    assert "TOTAL: 360.00 THB" in text
+
+
+def test_format_order_shows_a_single_unit_as_1x():
+    """Explicit rather than blank, so a missing count is never mistaken for one."""
+    order = {
+        "order_number": "BO-007",
+        "customer_name": "Hank",
+        "items": [{"name": "Burger", "ingredients": [], "options": []}],
+    }
+    with patch("app.main.get_kitchen_name", return_value="Kitchen"):
+        text = format_order(order, "k1")["text"]
+
+    assert ">> 1x Burger" in text
+
+
+def test_format_order_omits_money_when_the_menu_has_no_prices():
+    order = {
+        "order_number": "BO-008",
+        "customer_name": "Ivy",
+        "items": [{"name": "Burger", "quantity": 2, "ingredients": [], "options": []}],
+    }
+    with patch("app.main.get_kitchen_name", return_value="Kitchen"):
+        text = format_order(order, "k1")["text"]
+
+    assert ">> 2x Burger" in text
+    assert "TOTAL" not in text
+    assert "ea" not in text
+
+
+def test_format_order_prints_modifier_charges():
+    order = {
+        "order_number": "BO-009",
+        "customer_name": "Jo",
+        "currency": "GBP",
+        "total": 15500,
+        "items": [{
+            "name": "Burger", "quantity": 1, "unit_price": 12000,
+            "ingredients": [{"name": "Bacon", "included": True, "price_delta": 2000}],
+            "options": [{"group": "Size", "name": "Large", "price_delta": 1500}],
+        }],
+    }
+    with patch("app.main.get_kitchen_name", return_value="Kitchen"):
+        text = format_order(order, "k1")["text"]
+
+    assert "+ Bacon  20.00 GBP" in text
+    assert "+ Large  15.00 GBP" in text
+    assert "TOTAL: 155.00 GBP" in text

@@ -142,7 +142,11 @@ def format_order(order: dict, kitchen_id: str) -> dict:
 
     for item in order["items"]:
         unit = item.get("unit_price")
-        lines.append(f">> {item['name']}" + (f"   {money(unit, currency)}" if unit is not None else ""))
+        qty = item.get("quantity", 1)
+        # Quantity always shown: "1x" reads the same way as "3x" and removes any
+        # doubt about whether a count was simply left off.
+        head = f">> {qty}x {item['name']}"
+        lines.append(head + (f"   {money(unit, currency)} ea" if unit is not None else ""))
 
         included = [i["name"] for i in item.get("ingredients", []) if i["included"]]
         excluded = [i["name"] for i in item.get("ingredients", []) if not i["included"]]

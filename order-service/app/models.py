@@ -59,8 +59,10 @@ class OrderItem(Base):
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
     menu_item_id = Column(Integer, nullable=False)
     menu_item_name = Column(String, nullable=False)
-    # Price of the dish itself when the order was placed, so later menu changes
-    # never rewrite an old bill. Modifier charges live on the rows below.
+    quantity = Column(Integer, nullable=False, default=1)
+    # Price of one of the dish when the order was placed, so later menu changes
+    # never rewrite an old bill. Modifier charges live on the rows below and are
+    # also per unit.
     unit_price = Column(Integer, nullable=True)
     order = relationship("Order", back_populates="items")
     ingredients = relationship("OrderItemIngredient", back_populates="order_item", cascade="all, delete-orphan")

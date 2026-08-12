@@ -131,8 +131,16 @@ def load_currency(kitchen_id: str, db: Session) -> str:
     return (row[0] if row and row[0] else "") or DEFAULT_CURRENCY
 
 
-def line_total(unit_price: int | None, ingredient_deltas: list[int], option_deltas: list[int]) -> int | None:
-    """Total for one line, or None when the dish itself has no price."""
+def line_total(
+    unit_price: int | None,
+    ingredient_deltas: list[int],
+    option_deltas: list[int],
+    quantity: int = 1,
+) -> int | None:
+    """Total for one line, or None when the dish itself has no price.
+
+    Modifier charges are per unit, so the whole per-unit amount is multiplied.
+    """
     if unit_price is None:
         return None
-    return unit_price + sum(ingredient_deltas) + sum(option_deltas)
+    return (unit_price + sum(ingredient_deltas) + sum(option_deltas)) * quantity

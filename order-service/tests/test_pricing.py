@@ -216,3 +216,42 @@ def test_the_total_reaches_the_printers(client, menu, mock_redis):
 def test_history_and_queue_expose_the_total(client, menu):
     client.post("/orders/", json=_order([_burger()]))
     assert client.get("/orders/queue").json()[0]["total"] == 12000
+
+
+# ── Quantity ──────────────────────────────────────────────────────────────────
+
+def test_quantity_multiplies_the_line(client, menu):
+    data = client.post("/orders/", json=_order([{**_burger(), "quantity": 3}])).json()
+    assert data["items"][0]["quantity"] == 3
+    assert data["total"] == 36000
+
+
+def test_modifier_charges_apply_per_unit(client, menu):
+    """Bacon is +20.00 on each burger, not once for the line."""
+    data = client.post("/orders/", json=_order([
+        {**_burger(ingredients=[BACON_ON], options=[LARGE]), "quantity": 2},
+    ])).json()
+    assert data["total"] == (12000 + 2000 + 1500) * 2
+
+
+def test_quantity_defaults_to_one(client, menu):
+    data = client.post("/orders/", json=_order([_burger()])).json()
+    assert data["items"][0]["quantity"] == 1
+    assert data["total"] == 12000
+
+
+def test_quantity_is_bounded(client, menu):
+    for bad in (0, -1, 100, 10_000):
+        response = client.post("/orders/", json=_order([{**_burger(), "quantity": bad}]))
+        assert response.status_code == 422, bad
+
+
+def test_quantity_reaches_the_printers(client, menu, mock_redis):
+    client.post("/orders/", json=_order([{**_burger(), "quantity": 4}]))
+
+    payload = next(
+        json.loads(call.args[1])
+        for call in mock_redis.publish.call_args_list
+        if call.args[0] == "new_orders"
+    )
+    assert payload["items"][0]["quantity"] == 4

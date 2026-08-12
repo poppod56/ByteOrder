@@ -154,3 +154,48 @@ def test_run_sleeps_after_connection_error():
             pass
 
     mock_time.sleep.assert_called()
+
+
+def test_format_order_shows_quantity_price_and_total():
+    """quantity was read here long before the payload carried it, so it always
+    printed 1x. These assert it now reflects what was ordered."""
+    order = {
+        "order_number": "0006",
+        "customer_name": "Gina",
+        "currency": "THB",
+        "total": 36000,
+        "items": [{"name": "Burger", "quantity": 3, "unit_price": 12000, "ingredients": [], "options": []}],
+    }
+    receipt = _format_order(order)
+    assert "3x Burger" in receipt
+    assert "120.00 THB ea" in receipt
+    assert "TOTAL: 360.00 THB" in receipt
+
+
+def test_format_order_prints_modifier_charges():
+    order = {
+        "order_number": "0007",
+        "customer_name": "Jo",
+        "currency": "GBP",
+        "total": 15500,
+        "items": [{
+            "name": "Burger", "quantity": 1, "unit_price": 12000,
+            "ingredients": [{"name": "Bacon", "included": True, "price_delta": 2000}],
+            "options": [{"group": "Size", "name": "Large", "price_delta": 1500}],
+        }],
+    }
+    receipt = _format_order(order)
+    assert "+ Bacon  20.00 GBP" in receipt
+    assert "+ Large  15.00 GBP" in receipt
+    assert "TOTAL: 155.00 GBP" in receipt
+
+
+def test_format_order_stays_quiet_about_money_when_unpriced():
+    order = {
+        "order_number": "0008",
+        "customer_name": "Ivy",
+        "items": [{"name": "Burger", "quantity": 2, "ingredients": [], "options": []}],
+    }
+    receipt = _format_order(order)
+    assert "2x Burger" in receipt
+    assert "TOTAL" not in receipt

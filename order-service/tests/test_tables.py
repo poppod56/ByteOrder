@@ -446,3 +446,67 @@ def test_bulk_create_of_two_hundred_tables_is_not_quadratic(client):
     labels = [t["label"] for t in response.json()]
     assert len(set(labels)) == 200
     assert labels[0] == "Seat 1" and labels[-1] == "Seat 200"
+
+
+# ── Orders for one table ─────────────────────────────────────────────────────
+# Keyed off the QR code so the customer app's "already ordered" list survives a
+# reload or a second phone, and everyone at the table sees the same thing.
+
+def test_lists_todays_orders_for_the_table_newest_first(client):
+    table = _make_table(client, "Table 1")
+    first = client.post("/orders/", json=_order(table_code=table["code"])).json()
+    second = client.post("/orders/", json=_order(table_code=table["code"])).json()
+
+    listed = client.get(f"/orders/by-table/{table['code']}").json()
+    assert [o["id"] for o in listed] == [second["id"], first["id"]]
+
+
+def test_excludes_other_tables_orders(client):
+    tables = client.post("/orders/tables/", json={"label": "T", "count": 2}).json()
+    client.post("/orders/", json=_order(table_code=tables[0]["code"]))
+    client.post("/orders/", json=_order(table_code=tables[1]["code"]))
+
+    listed = client.get(f"/orders/by-table/{tables[0]['code']}").json()
+    assert len(listed) == 1
+    assert listed[0]["table_label"] == tables[0]["label"]
+
+
+def test_excludes_takeaway_orders(client):
+    table = _make_table(client, "Table 1")
+    client.post("/orders/", json=_order())   # no table_code
+
+    assert client.get(f"/orders/by-table/{table['code']}").json() == []
+
+
+def test_includes_completed_orders_so_a_customer_still_sees_what_they_collected(client):
+    table = _make_table(client, "Table 1")
+    order_id = client.post("/orders/", json=_order(table_code=table["code"])).json()["id"]
+    client.put(f"/orders/{order_id}/status", json={"status": "completed"})
+
+    listed = client.get(f"/orders/by-table/{table['code']}").json()
+    assert [o["status"] for o in listed] == ["completed"]
+
+
+def test_reports_queue_position_for_active_orders(client):
+    table = _make_table(client, "Table 1")
+    client.post("/orders/", json=_order(table_code=table["code"]))
+
+    assert client.get(f"/orders/by-table/{table['code']}").json()[0]["queue_position"] == 1
+
+
+def test_unknown_or_rotated_code_returns_404(client):
+    table = _make_table(client, "Table 1")
+    old_code = table["code"]
+    client.post(f"/orders/tables/{table['id']}/rotate")
+
+    assert client.get("/orders/by-table/nope").status_code == 404
+    assert client.get(f"/orders/by-table/{old_code}").status_code == 404
+
+
+def test_another_kitchens_code_is_not_visible(client, db):
+    from app import models
+
+    db.add(models.Table(kitchen_id="other-kitchen", code="theircode3", label="Theirs"))
+    db.commit()
+
+    assert client.get("/orders/by-table/theircode3").status_code == 404
