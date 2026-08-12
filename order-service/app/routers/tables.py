@@ -1,4 +1,4 @@
-import re
+import secrets
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
@@ -9,16 +9,10 @@ from app.database import get_db
 
 router = APIRouter(prefix="/orders/tables", tags=["tables"])
 
-
-def _slugify(label: str) -> str:
-    """ASCII slug for use in the QR URL (?t=...).
-
-    Non-ASCII labels (e.g. Thai) legitimately reduce to an empty string —
-    callers must fall back to a generated code in that case, since the code
-    ends up in a URL that staff may have to read or type off a printed sheet.
-    """
-    slug = re.sub(r"[^a-z0-9]+", "-", label.strip().lower()).strip("-")
-    return slug[:32]
+# Ambiguous glyphs (0/O, 1/l/I) are excluded so a code read off a printed sheet
+# is never transcribed wrongly.
+_CODE_ALPHABET = "abcdefghjkmnpqrstuvwxyz23456789"
+_CODE_LENGTH = 10
 
 
 def _code_taken(code: str, kitchen_id: str, db: Session) -> bool:
@@ -28,15 +22,17 @@ def _code_taken(code: str, kitchen_id: str, db: Session) -> bool:
     ).first() is not None
 
 
-def _unique_code(desired: str, kitchen_id: str, db: Session) -> str:
-    """First free code from `desired`, `desired-2`, `desired-3`, …"""
-    base = desired or "t"
-    if not _code_taken(base, kitchen_id, db):
-        return base
-    n = 2
-    while _code_taken(f"{base}-{n}", kitchen_id, db):
-        n += 1
-    return f"{base}-{n}"
+def _random_code(kitchen_id: str, db: Session) -> str:
+    """An unguessable code for the QR URL.
+
+    Codes must be random rather than derived from the label: rotating a
+    guessable code (table-1 → table-2) would not actually revoke anything, which
+    is the whole point of rotation.
+    """
+    while True:
+        code = "".join(secrets.choice(_CODE_ALPHABET) for _ in range(_CODE_LENGTH))
+        if not _code_taken(code, kitchen_id, db):
+            return code
 
 
 # ── Public endpoint — called by the customer app to resolve a scanned QR ──────
@@ -84,26 +80,13 @@ def create_tables(
         raise HTTPException(status_code=400, detail="Label is required")
     if data.count < 1 or data.count > 200:
         raise HTTPException(status_code=400, detail="Count must be between 1 and 200")
-    if data.code and data.count > 1:
-        raise HTTPException(status_code=400, detail="Cannot set an explicit code when creating multiple tables")
-
-    if data.code:
-        code = data.code.strip().lower()
-        if code != _slugify(code):
-            raise HTTPException(status_code=400, detail="Code may only contain lowercase letters, numbers and dashes")
-        if _code_taken(code, kitchen_id, db):
-            raise HTTPException(status_code=409, detail=f"Code '{code}' is already in use")
 
     created = []
     for i in range(data.count):
         row_label = label if data.count == 1 else f"{label} {i + 1}"
-        if data.code:
-            row_code = data.code.strip().lower()
-        else:
-            row_code = _unique_code(_slugify(row_label), kitchen_id, db)
-        table = models.Table(kitchen_id=kitchen_id, code=row_code, label=row_label)
+        table = models.Table(kitchen_id=kitchen_id, code=_random_code(kitchen_id, db), label=row_label)
         db.add(table)
-        # Flush per row so _unique_code sees codes created earlier in this loop.
+        # Flush per row so _random_code sees codes issued earlier in this loop.
         db.flush()
         created.append(table)
 
@@ -136,6 +119,31 @@ def update_table(
     if data.active is not None:
         table.active = data.active
 
+    db.commit()
+    db.refresh(table)
+    return table
+
+
+@router.post("/{table_id}/rotate", response_model=schemas.TableOut)
+def rotate_table_code(
+    table_id: int,
+    db: Session = Depends(get_db),
+    kitchen_id: str = Depends(get_kitchen_id),
+):
+    """Issue a new QR code for a table, for when the old one has leaked.
+
+    The old code stops working immediately and with no grace period — anyone
+    who kept a photo of it is exactly who this is meant to cut off. The sticker
+    on the table must be reprinted.
+    """
+    table = db.query(models.Table).filter(
+        models.Table.id == table_id,
+        models.Table.kitchen_id == kitchen_id,
+    ).first()
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    table.code = _random_code(kitchen_id, db)
     db.commit()
     db.refresh(table)
     return table

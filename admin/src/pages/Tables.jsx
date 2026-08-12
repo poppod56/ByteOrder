@@ -12,6 +12,9 @@ export default function Tables() {
   const [frontendUrl, setFrontendUrl] = useState('')
   const [slug, setSlug] = useState(null)
   const [brandColour, setBrandColour] = useState('#ea580c')
+  // Tables whose code changed this session — their stickers are now dead, and
+  // forgetting to reprint is the most likely way rotation goes wrong.
+  const [needsReprint, setNeedsReprint] = useState([])
 
   useEffect(() => {
     loadTables()
@@ -67,6 +70,28 @@ export default function Tables() {
     }
   }
 
+  async function handleRotate(table) {
+    const ok = confirm(
+      `Generate a new QR code for ${table.label}?\n\n` +
+      'The sticker currently on the table stops working straight away — you will need to print and replace it.'
+    )
+    if (!ok) return
+    setError('')
+    setSuccess('')
+    try {
+      await api.post(`/orders/tables/${table.id}/rotate`)
+      setNeedsReprint(prev => (prev.includes(table.label) ? prev : [...prev, table.label]))
+      loadTables()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to generate a new QR code.')
+    }
+  }
+
+  function handlePrint() {
+    window.print()
+    setNeedsReprint([])
+  }
+
   async function handleRemove(table) {
     if (!confirm(`Remove ${table.label}? Its QR code will stop working, but past orders keep their table name.`)) return
     try {
@@ -103,6 +128,13 @@ export default function Tables() {
         {success && <p className="text-green-600 text-sm">{success}</p>}
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
+        {needsReprint.length > 0 && (
+          <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
+            New QR code issued for <strong>{needsReprint.join(', ')}</strong>. The old sticker no longer
+            works — print the sheet and replace it now.
+          </div>
+        )}
+
         {!frontendUrl && (
           <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-lg px-4 py-3">
             No <strong>Customer site URL</strong> set in Settings — QR codes below are guessed from this
@@ -124,6 +156,7 @@ export default function Tables() {
                   </div>
                   <div className="flex items-center gap-3 shrink-0 ml-4">
                     <button onClick={() => handleRename(t)} className="text-xs text-gray-500 hover:text-gray-800">Rename</button>
+                    <button onClick={() => handleRotate(t)} className="text-xs text-gray-500 hover:text-gray-800">New QR</button>
                     <button onClick={() => handleRemove(t)} className="text-xs text-red-500 hover:text-red-700">Remove</button>
                   </div>
                 </div>
@@ -133,7 +166,7 @@ export default function Tables() {
 
           {tables.length > 0 && (
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg px-6 py-2"
             >
               Print QR sheet

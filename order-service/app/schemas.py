@@ -73,8 +73,7 @@ class OrderStatusUpdate(BaseModel):
 
 class TableIn(BaseModel):
     label: str
-    code: Optional[str] = None   # derived from label when omitted
-    count: int = 1               # >1 creates label 1..N in one call
+    count: int = 1   # >1 creates label 1..N in one call; codes are always generated
 
 
 class TableUpdate(BaseModel):

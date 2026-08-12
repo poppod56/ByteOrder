@@ -114,6 +114,52 @@ describe('Tables — listing', () => {
     })
   })
 
+  it('warns to reprint after issuing a new QR code', async () => {
+    mockApi()
+    api.post.mockResolvedValue({ data: { ...TABLE, code: 'newcode123' } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    render(<Tables />)
+    await screen.findAllByText('Table 1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'New QR' }))
+
+    await waitFor(() => {
+      expect(api.post).toHaveBeenCalledWith('/orders/tables/1/rotate')
+    })
+    expect(await screen.findByText(/old sticker no longer works/i)).toBeInTheDocument()
+  })
+
+  it('does not rotate when the confirmation is declined', async () => {
+    mockApi()
+    vi.spyOn(window, 'confirm').mockReturnValue(false)
+    render(<Tables />)
+    await screen.findAllByText('Table 1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'New QR' }))
+
+    expect(api.post).not.toHaveBeenCalled()
+    expect(screen.queryByText(/old sticker no longer works/i)).not.toBeInTheDocument()
+  })
+
+  it('clears the reprint warning once the sheet is printed', async () => {
+    mockApi()
+    api.post.mockResolvedValue({ data: { ...TABLE, code: 'newcode123' } })
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    vi.spyOn(window, 'print').mockImplementation(() => {})
+    render(<Tables />)
+    await screen.findAllByText('Table 1')
+
+    await userEvent.click(screen.getByRole('button', { name: 'New QR' }))
+    await screen.findByText(/old sticker no longer works/i)
+
+    await userEvent.click(screen.getByRole('button', { name: 'Print QR sheet' }))
+
+    expect(window.print).toHaveBeenCalled()
+    await waitFor(() => {
+      expect(screen.queryByText(/old sticker no longer works/i)).not.toBeInTheDocument()
+    })
+  })
+
   it('surfaces the API error message when adding fails', async () => {
     mockApi()
     api.post.mockRejectedValue({ response: { data: { detail: "Code 'table-1' is already in use" } } })
