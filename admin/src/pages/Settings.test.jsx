@@ -37,6 +37,47 @@ function mockSettingsWithKitchenName(name) {
   })
 }
 
+function mockSettings(settings, slug) {
+  api.get.mockImplementation((url) => {
+    if (url === '/settings/') return Promise.resolve({ data: settings })
+    if (url === '/menu/kitchens/me') {
+      return slug
+        ? Promise.resolve({ data: { slug } })
+        : Promise.reject({ response: { status: 404 } })
+    }
+    return Promise.reject(new Error(`Unexpected GET ${url}`))
+  })
+}
+
+// ── Customer URL preview ──────────────────────────────────────────────────────
+
+describe('Settings — customer URL preview', () => {
+  beforeEach(() => {
+    vi.clearAllMocks()
+    useOrganization.mockReturnValue({ organization: null })
+  })
+
+  it('builds the preview from Frontend URL so it matches what QR codes encode', async () => {
+    mockSettings([{ key: 'frontend_url', value: 'https://order.example.com' }], 'matts-baps')
+
+    render(<Settings />)
+
+    await waitFor(() => {
+      expect(screen.getByText('https://order.example.com/k/matts-baps')).toBeInTheDocument()
+    })
+  })
+
+  it('falls back to the admin origin with the admin. prefix stripped', async () => {
+    mockSettings([], 'matts-baps')
+
+    render(<Settings />)
+
+    await waitFor(() => {
+      expect(screen.getByText(`${window.location.origin}/k/matts-baps`)).toBeInTheDocument()
+    })
+  })
+})
+
 // ── kitchen_name pre-fill from Clerk ──────────────────────────────────────────
 
 describe('Settings — kitchen name pre-fill from Clerk', () => {

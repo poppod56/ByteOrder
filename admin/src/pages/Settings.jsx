@@ -118,9 +118,11 @@ export default function Settings() {
     }
   }
 
-  const customerUrl = slug
-    ? `${window.location.origin.replace(/admin\./, '')}/k/${slug}`
-    : null
+  // Prefer the configured Frontend URL over guessing from the admin origin —
+  // this preview should show customers the same address their QR codes encode.
+  const customerBase = frontendUrl.trim().replace(/\/+$/, '')
+    || window.location.origin.replace(/(^https?:\/\/)admin\./, '$1')
+  const customerUrl = slug ? `${customerBase}/k/${slug}` : null
 
   return (
     <div className="max-w-lg space-y-8">
@@ -178,7 +180,7 @@ export default function Settings() {
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Customer site URL</label>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Frontend URL</label>
           <input
             value={frontendUrl}
             onChange={e => setFrontendUrl(e.target.value)}
@@ -186,7 +188,8 @@ export default function Settings() {
             placeholder="https://order.my-kitchen.com"
           />
           <p className="text-xs text-gray-400 mt-1">
-            Public address customers reach — used to build printed table QR codes. Leave blank to guess from this admin URL.
+            Public address customers reach. Every QR code — the kiosk screen and printed table codes — is
+            built from this. Leave blank to guess from the address each screen is loaded on.
           </p>
         </div>
 

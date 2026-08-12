@@ -66,7 +66,7 @@ describe('Tables — QR target URL', () => {
     mockApi({ settings: [] })
     render(<Tables />)
 
-    expect(await screen.findByText('Customer site URL')).toBeInTheDocument()
+    expect(await screen.findByText('Frontend URL')).toBeInTheDocument()
   })
 
   it('hides the warning once a customer site URL is set', async () => {
@@ -74,7 +74,7 @@ describe('Tables — QR target URL', () => {
     render(<Tables />)
 
     await screen.findAllByText('https://order.example.com/order?t=table-1')
-    expect(screen.queryByText('Customer site URL')).not.toBeInTheDocument()
+    expect(screen.queryByText('Frontend URL')).not.toBeInTheDocument()
   })
 })
 

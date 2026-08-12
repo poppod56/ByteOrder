@@ -105,6 +105,7 @@ export default function Tables() {
   // Customers never load the admin origin, so the QR must point at the public
   // customer site. Guessing from window.location is a fallback only — a wrong
   // base URL silently prints QR codes that lead nowhere useful.
+  // The kiosk QR is built the same way in the customer app's Home page.
   const baseUrl = frontendUrl.trim().replace(/\/+$/, '')
     || window.location.origin.replace(/(^https?:\/\/)admin\./, '$1')
   const orderPath = slug ? `/k/${slug}/order` : '/order'
@@ -137,7 +138,7 @@ export default function Tables() {
 
         {!frontendUrl && (
           <div className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-lg px-4 py-3">
-            No <strong>Customer site URL</strong> set in Settings — QR codes below are guessed from this
+            No <strong>Frontend URL</strong> set in Settings — QR codes below are guessed from this
             admin address (<span className="font-mono">{baseUrl}</span>). Set it before printing.
           </div>
         )}

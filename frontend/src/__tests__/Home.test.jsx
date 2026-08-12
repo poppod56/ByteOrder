@@ -7,12 +7,15 @@ vi.mock('../contexts/KitchenContext', () => ({
   useKitchen: () => ({ kitchenId: 'test-kitchen', slug: null }),
 }))
 
+let frontendUrlSetting = null
+
 vi.mock('../lib/api', () => ({
   menuApi: {
     get: vi.fn((path) => {
       if (path.includes('kitchen_name')) return Promise.resolve({ data: { value: 'Test Kitchen' } })
       if (path.includes('logo')) return Promise.resolve({ data: { value: null } })
       if (path.includes('brand_primary')) return Promise.resolve({ data: { value: '#ea580c' } })
+      if (path.includes('frontend_url')) return Promise.resolve({ data: { value: frontendUrlSetting } })
       return Promise.resolve({ data: {} })
     }),
   },
@@ -27,6 +30,41 @@ vi.mock('qrcode.react', () => ({
 }))
 
 import Home from '../pages/Home'
+
+beforeEach(() => {
+  frontendUrlSetting = null
+})
+
+describe('Home — kiosk QR target', () => {
+  it('encodes the configured Frontend URL, not the address the kiosk is loaded on', async () => {
+    frontendUrlSetting = 'https://order.example.com'
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>
+    )
+    expect(await screen.findByText('https://order.example.com/order')).toBeInTheDocument()
+  })
+
+  it('strips a trailing slash', async () => {
+    frontendUrlSetting = 'https://order.example.com/'
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>
+    )
+    expect(await screen.findByText('https://order.example.com/order')).toBeInTheDocument()
+  })
+
+  it('falls back to the current origin when unset', async () => {
+    render(
+      <MemoryRouter>
+        <Home />
+      </MemoryRouter>
+    )
+    expect(await screen.findByText(`${window.location.origin}/order`)).toBeInTheDocument()
+  })
+})
 
 describe('Home', () => {
   it('renders without crashing', () => {
