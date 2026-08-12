@@ -15,3 +15,15 @@ global.EventSource = vi.fn().mockImplementation(function (url) {
   const instance = new MockEventSource()
   return instance
 })
+
+// jsdom has no IntersectionObserver; the ordering page uses one to keep the
+// category tab in step with the scroll position.
+global.IntersectionObserver = class {
+  constructor(callback) { this.callback = callback }
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+
+// jsdom does not implement scrollIntoView.
+Element.prototype.scrollIntoView = vi.fn()

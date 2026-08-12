@@ -1,44 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { MemoryRouter } from 'react-router-dom'
-
-const navigateSpy = vi.fn()
-vi.mock('react-router-dom', async importOriginal => ({
-  ...(await importOriginal()),
-  useNavigate: () => navigateSpy,
-}))
 
 vi.mock('../contexts/KitchenContext', () => ({
   KitchenProvider: ({ children }) => children,
   useKitchen: () => ({ kitchenId: 'test-kitchen', slug: null }),
 }))
-
-const CATEGORIES = [{
-  id: 1,
-  name: 'Burgers',
-  description: '',
-  items: [{ id: 10, name: 'Cheeseburger', description: '', item_ingredients: [], option_groups: [] }],
-}]
-
-function withOptionGroups(groups) {
-  return [{ ...CATEGORIES[0], items: [{ ...CATEGORIES[0].items[0], option_groups: groups }] }]
-}
-
-const SIZE_REQUIRED = {
-  id: 1, name: 'Size', required: true, min_select: 0, max_select: 1,
-  options: [{ id: 100, name: 'Regular' }, { id: 101, name: 'Large' }],
-}
-const EXTRAS_UP_TO_TWO = {
-  id: 2, name: 'Extras', required: false, min_select: 0, max_select: 2,
-  options: [{ id: 200, name: 'Egg' }, { id: 201, name: 'Bacon' }, { id: 202, name: 'Avocado' }],
-}
-
-async function reachCustomise() {
-  await screen.findByText(/What are you having\?/i)
-  await userEvent.click(screen.getByText('Burgers'))
-  await userEvent.click(screen.getByText('Cheeseburger'))
-}
 
 const menuApi = { get: vi.fn() }
 const orderApi = { get: vi.fn(), post: vi.fn() }
@@ -54,7 +22,33 @@ vi.mock('../lib/api', () => ({
 
 import Order from '../pages/Order'
 
-function renderOrder(path) {
+const SIZE = {
+  id: 1, name: 'Size', required: true, min_select: 0, max_select: 1,
+  options: [{ id: 100, name: 'Regular', price_delta: 0 }, { id: 101, name: 'Large', price_delta: 1500 }],
+}
+const BACON = { ingredient: { id: 11, name: 'Bacon' }, is_default: false, price_delta: 2000 }
+const LETTUCE = { ingredient: { id: 10, name: 'Lettuce' }, is_default: true, price_delta: 0 }
+
+const BURGER = {
+  id: 10, name: 'Cheeseburger', description: 'Beef patty', price: 12000, has_image: true,
+  item_ingredients: [LETTUCE, BACON], option_groups: [SIZE],
+}
+const FRIES = {
+  id: 11, name: 'Fries', description: '', price: 4000, has_image: false,
+  item_ingredients: [], option_groups: [],
+}
+const WATER = {
+  id: 12, name: 'Water', description: '', price: null, has_image: false,
+  item_ingredients: [], option_groups: [],
+}
+
+const CATEGORIES = [
+  { id: 1, name: 'Burgers', description: 'Handmade', items: [BURGER] },
+  { id: 2, name: 'Sides', description: '', items: [FRIES, WATER] },
+  { id: 3, name: 'Empty', description: '', items: [] },
+]
+
+function renderOrder(path = '/order') {
   return render(
     <MemoryRouter initialEntries={[path]}>
       <Order />
@@ -64,226 +58,386 @@ function renderOrder(path) {
 
 beforeEach(() => {
   vi.clearAllMocks()
-  menuApi.get.mockImplementation(path =>
-    path === '/categories/'
-      ? Promise.resolve({ data: CATEGORIES })
-      : Promise.resolve({ data: { value: null } })
-  )
-  orderApi.get.mockResolvedValue({ data: { code: 't3', label: 'Table 3' } })
+  sessionStorage.clear()
+  menuApi.get.mockImplementation(path => {
+    if (path === '/categories/') return Promise.resolve({ data: CATEGORIES })
+    if (path.includes('currency')) return Promise.resolve({ data: { value: 'THB' } })
+    return Promise.resolve({ data: { value: null } })
+  })
+  orderApi.get.mockImplementation(path => {
+    if (path.includes('/by-code/')) return Promise.resolve({ data: { code: 't3', label: 'Table 3' } })
+    if (path.includes('/track/')) return Promise.reject({ response: { status: 404 } })
+    return Promise.resolve({ data: [] })
+  })
   orderApi.post.mockResolvedValue({ data: { public_id: 'abc-123' } })
 })
 
-describe('Order page — no table QR', () => {
-  it('asks for a name first', async () => {
-    renderOrder('/order')
-    expect(await screen.findByText(/What's your name\?/i)).toBeDefined()
+async function openBurgerSheet() {
+  await userEvent.click(await screen.findByText('Cheeseburger'))
+  return screen.getByRole('dialog')
+}
+
+async function addBurgerToCart({ size = 'Large' } = {}) {
+  const sheet = await openBurgerSheet()
+  await userEvent.click(within(sheet).getByText(new RegExp(`^${size}`)))
+  await userEvent.click(within(sheet).getByRole('button', { name: /Add \d+ to cart/ }))
+}
+
+// ── Menu ─────────────────────────────────────────────────────────────────────
+
+describe('Order page — menu', () => {
+  it('lays the whole menu out in sections instead of a step-by-step wizard', async () => {
+    renderOrder()
+
+    expect(await screen.findByRole('heading', { name: 'Burgers' })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: 'Sides' })).toBeInTheDocument()
+    expect(screen.getByText('Cheeseburger')).toBeInTheDocument()
+    expect(screen.getByText('Fries')).toBeInTheDocument()
   })
 
-  it('does not look up a table', async () => {
-    renderOrder('/order')
-    await screen.findByText(/What's your name\?/i)
-    expect(orderApi.get).not.toHaveBeenCalled()
-  })
-})
+  it('offers a tab per category, skipping ones with nothing in them', async () => {
+    renderOrder()
+    await screen.findByText('Cheeseburger')
 
-describe('Order page — scanned from a table QR', () => {
-  it('resolves the code and skips straight to the menu', async () => {
-    renderOrder('/order?t=t3')
-
-    expect(await screen.findByText(/What are you having\?/i)).toBeDefined()
-    expect(orderApi.get).toHaveBeenCalledWith('/orders/tables/by-code/t3')
-    expect(screen.queryByText(/What's your name\?/i)).toBeNull()
+    const tabs = screen.getByRole('navigation', { name: 'Menu categories' })
+    expect(within(tabs).getByText('Burgers')).toBeInTheDocument()
+    expect(within(tabs).queryByText('Empty')).not.toBeInTheDocument()
   })
 
-  it('shows the table label so a mis-stuck QR is noticed', async () => {
-    renderOrder('/order?t=t3')
-    expect(await screen.findByText('Table 3')).toBeDefined()
+  it('scrolls to a section when its tab is tapped', async () => {
+    renderOrder()
+    await screen.findByText('Cheeseburger')
+
+    await userEvent.click(within(screen.getByRole('navigation', { name: 'Menu categories' })).getByText('Sides'))
+
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled()
   })
 
-  it('falls back to the name step when the code is unknown', async () => {
-    orderApi.get.mockRejectedValue({ response: { status: 404 } })
-    renderOrder('/order?t=bogus')
+  it('shows prices, and nothing where a price was never set', async () => {
+    renderOrder()
+    await screen.findByText('Cheeseburger')
 
-    expect(await screen.findByText(/What's your name\?/i)).toBeDefined()
-    expect(await screen.findByText(/couldn't recognise that table code/i)).toBeDefined()
+    expect(screen.getByText(/120\.00/)).toBeInTheDocument()
+    expect(screen.getByText(/40\.00/)).toBeInTheDocument()
+    // Water is unpriced — its card must show no amount at all, not a free price.
+    const waterCard = screen.getByText('Water').closest('button')
+    expect(waterCard.textContent).not.toMatch(/\d+\.\d{2}/)
   })
 
-  it('binds the placed order to the table and keeps it for the next round', async () => {
-    renderOrder('/order?t=t3')
-    await screen.findByText(/What are you having\?/i)
+  it('requests item images with the kitchen in the URL', async () => {
+    // A plain <img> carries no X-Kitchen-ID header, so the kitchen has to travel
+    // in the query string or cloud deployments reject every thumbnail.
+    renderOrder()
+    await screen.findByText('Cheeseburger')
 
-    await userEvent.click(screen.getByText('Burgers'))
-    await userEvent.click(screen.getByText('Cheeseburger'))
-    await userEvent.click(screen.getByText('Add to order'))
-    await userEvent.click(screen.getByText('Place Order'))
-
-    await waitFor(() => expect(orderApi.post).toHaveBeenCalled())
-    expect(orderApi.post.mock.calls[0][1]).toMatchObject({ table_code: 't3' })
-    // ?t= must survive into the tracking URL, or ordering again loses the table.
-    expect(navigateSpy).toHaveBeenCalledWith('/track/abc-123?t=t3')
+    expect(document.querySelector('img'))
+      .toHaveAttribute('src', '/api/items/10/image?kitchen_id=test-kitchen')
   })
 
-  it('explains a rotated QR instead of telling the customer to retry', async () => {
-    orderApi.post.mockRejectedValue({
-      response: { status: 400, data: { detail: { code: 'unknown_table', message: 'Unknown table code' } } },
-    })
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+  it('asks for no image when the item has none', async () => {
+    renderOrder()
+    await screen.findByText('Fries')
 
-    renderOrder('/order?t=t3')
-    await screen.findByText(/What are you having\?/i)
-    await userEvent.click(screen.getByText('Burgers'))
-    await userEvent.click(screen.getByText('Cheeseburger'))
-    await userEvent.click(screen.getByText('Add to order'))
-    await userEvent.click(screen.getByText('Place Order'))
-
-    expect(await screen.findByText(/This table has a new QR code/i)).toBeInTheDocument()
-    // The old generic "please try again" could never succeed here.
-    expect(alertSpy).not.toHaveBeenCalled()
-  })
-
-  it('lets the customer keep the basket as a takeaway order', async () => {
-    orderApi.post.mockRejectedValue({
-      response: { status: 400, data: { detail: { code: 'unknown_table', message: 'Unknown table code' } } },
-    })
-    vi.spyOn(window, 'alert').mockImplementation(() => {})
-
-    renderOrder('/order?t=t3')
-    await screen.findByText(/What are you having\?/i)
-    await userEvent.click(screen.getByText('Burgers'))
-    await userEvent.click(screen.getByText('Cheeseburger'))
-    await userEvent.click(screen.getByText('Add to order'))
-    await userEvent.click(screen.getByText('Place Order'))
-    await screen.findByText(/This table has a new QR code/i)
-
-    await userEvent.click(screen.getByText('Keep my order as a takeaway'))
-
-    // Dropped back to the name step, with the basket still in hand.
-    expect(await screen.findByText(/What's your name\?/i)).toBeInTheDocument()
-    expect(screen.getByText('Basket (1)')).toBeInTheDocument()
-  })
-
-  it('still surfaces other failures as before', async () => {
-    orderApi.post.mockRejectedValue({ response: { status: 500, data: {} } })
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
-
-    renderOrder('/order?t=t3')
-    await screen.findByText(/What are you having\?/i)
-    await userEvent.click(screen.getByText('Burgers'))
-    await userEvent.click(screen.getByText('Cheeseburger'))
-    await userEvent.click(screen.getByText('Add to order'))
-    await userEvent.click(screen.getByText('Place Order'))
-
-    await waitFor(() => expect(alertSpy).toHaveBeenCalled())
-    expect(screen.queryByText(/This table has a new QR code/i)).not.toBeInTheDocument()
-  })
-
-  it('does not send a table_code once the lookup has failed', async () => {
-    orderApi.get.mockRejectedValue({ response: { status: 404 } })
-    renderOrder('/order?t=bogus')
-    await screen.findByText(/What's your name\?/i)
-
-    // Nothing submitted yet, but the failed code must not be retained for later.
-    await waitFor(() => expect(orderApi.post).not.toHaveBeenCalled())
-    expect(screen.queryByText('Table 3')).toBeNull()
+    expect(document.querySelectorAll('img')).toHaveLength(1)   // the burger only
   })
 })
 
-describe('Order page — option groups', () => {
-  it('asks for the choices the kitchen configured', async () => {
-    menuApi.get.mockImplementation(path =>
-      path === '/categories/'
-        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED]) })
-        : Promise.resolve({ data: { value: null } })
-    )
-    renderOrder('/order?t=t3')
-    await reachCustomise()
+// ── Item sheet ───────────────────────────────────────────────────────────────
 
-    expect(screen.getByText('Size')).toBeInTheDocument()
-    expect(screen.getByText('Regular')).toBeInTheDocument()
-    expect(screen.getByText('Large')).toBeInTheDocument()
-    expect(screen.getByText('Choose one')).toBeInTheDocument()
+describe('Order page — item sheet', () => {
+  it('opens a sheet with the item detail', async () => {
+    renderOrder()
+    const sheet = await openBurgerSheet()
+
+    expect(within(sheet).getByText('Beef patty')).toBeInTheDocument()
+    expect(within(sheet).getByText('Lettuce')).toBeInTheDocument()
   })
 
-  it('blocks adding to the order until a required choice is made', async () => {
-    menuApi.get.mockImplementation(path =>
-      path === '/categories/'
-        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED]) })
-        : Promise.resolve({ data: { value: null } })
-    )
-    renderOrder('/order?t=t3')
-    await reachCustomise()
+  it('steps the quantity between 1 and 99', async () => {
+    renderOrder()
+    const sheet = await openBurgerSheet()
 
-    expect(screen.getByText('Add to order')).toBeDisabled()
-    expect(screen.getByText(/Please choose: Size/i)).toBeInTheDocument()
+    expect(within(sheet).getByTestId('quantity')).toHaveTextContent('1')
+    expect(within(sheet).getByLabelText('Fewer')).toBeDisabled()
 
-    await userEvent.click(screen.getByText('Large'))
+    await userEvent.click(within(sheet).getByLabelText('More'))
+    await userEvent.click(within(sheet).getByLabelText('More'))
+    expect(within(sheet).getByTestId('quantity')).toHaveTextContent('3')
 
-    expect(screen.getByText('Add to order')).toBeEnabled()
+    await userEvent.click(within(sheet).getByLabelText('Fewer'))
+    expect(within(sheet).getByTestId('quantity')).toHaveTextContent('2')
   })
 
-  it('replaces the pick in a choose-one group', async () => {
-    menuApi.get.mockImplementation(path =>
-      path === '/categories/'
-        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED]) })
-        : Promise.resolve({ data: { value: null } })
-    )
-    renderOrder('/order?t=t3')
-    await reachCustomise()
+  it('prices the line as it is configured', async () => {
+    renderOrder()
+    const sheet = await openBurgerSheet()
 
-    await userEvent.click(screen.getByText('Regular'))
-    await userEvent.click(screen.getByText('Large'))
-    await userEvent.click(screen.getByText('Add to order'))
+    await userEvent.click(within(sheet).getByText(/^Large/))    // +15.00
+    await userEvent.click(within(sheet).getByText(/^Bacon/))    // +20.00
+    await userEvent.click(within(sheet).getByLabelText('More')) // ×2
 
-    // Only the last pick survives, not both.
-    expect(screen.getByText('Size: Large')).toBeInTheDocument()
+    expect(within(sheet).getByRole('button', { name: /Add 2 to cart/ }))
+      .toHaveTextContent('310.00')
   })
 
-  it('accumulates up to the cap then locks the rest', async () => {
-    menuApi.get.mockImplementation(path =>
-      path === '/categories/'
-        ? Promise.resolve({ data: withOptionGroups([EXTRAS_UP_TO_TWO]) })
-        : Promise.resolve({ data: { value: null } })
-    )
-    renderOrder('/order?t=t3')
-    await reachCustomise()
+  it('will not add until a required choice is made', async () => {
+    renderOrder()
+    const sheet = await openBurgerSheet()
 
-    expect(screen.getByText('Choose up to 2')).toBeInTheDocument()
-    await userEvent.click(screen.getByText('Egg'))
-    await userEvent.click(screen.getByText('Bacon'))
+    expect(within(sheet).getByRole('button', { name: /Add 1 to cart/ })).toBeDisabled()
+    expect(within(sheet).getByText(/Please choose: Size/)).toBeInTheDocument()
 
-    expect(screen.getByText('Avocado')).toBeDisabled()
-
-    // Deselecting frees the slot again.
-    await userEvent.click(screen.getByText('Egg'))
-    expect(screen.getByText('Avocado')).toBeEnabled()
+    await userEvent.click(within(sheet).getByText(/^Regular/))
+    expect(within(sheet).getByRole('button', { name: /Add 1 to cart/ })).toBeEnabled()
   })
 
-  it('sends the chosen options with the order', async () => {
-    menuApi.get.mockImplementation(path =>
-      path === '/categories/'
-        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED, EXTRAS_UP_TO_TWO]) })
-        : Promise.resolve({ data: { value: null } })
-    )
-    renderOrder('/order?t=t3')
-    await reachCustomise()
+  it('adds straight away for an item with no choices', async () => {
+    renderOrder()
+    await userEvent.click(await screen.findByText('Fries'))
 
-    await userEvent.click(screen.getByText('Large'))
-    await userEvent.click(screen.getByText('Bacon'))
-    await userEvent.click(screen.getByText('Add to order'))
-    await userEvent.click(screen.getByText('Place Order'))
+    const sheet = screen.getByRole('dialog')
+    expect(within(sheet).getByRole('button', { name: /Add 1 to cart/ })).toBeEnabled()
+  })
+
+  it('closes on Escape without adding anything', async () => {
+    renderOrder()
+    await openBurgerSheet()
+
+    await userEvent.keyboard('{Escape}')
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /Cart/ })).not.toHaveTextContent('1')
+  })
+})
+
+// ── Cart ─────────────────────────────────────────────────────────────────────
+
+describe('Order page — cart', () => {
+  it('counts what is in the cart on the bottom bar', async () => {
+    renderOrder()
+    await addBurgerToCart()
+
+    expect(screen.getByRole('button', { name: /Cart/ })).toHaveTextContent('1')
+  })
+
+  it('merges an identical configuration instead of listing it twice', async () => {
+    renderOrder()
+    await addBurgerToCart({ size: 'Large' })
+    await addBurgerToCart({ size: 'Large' })
+
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+
+    expect(screen.getAllByText('Cheeseburger')).toHaveLength(1)
+    // Shown twice over: once on the line, once as the cart total.
+    expect(screen.getAllByText(/270\.00/)).toHaveLength(2)   // (120+15) × 2
+  })
+
+  it('keeps differently configured lines apart', async () => {
+    renderOrder()
+    await addBurgerToCart({ size: 'Large' })
+    await addBurgerToCart({ size: 'Regular' })
+
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+
+    expect(screen.getAllByText('Cheeseburger')).toHaveLength(2)
+  })
+
+  it('adjusts a line, and removes it at zero', async () => {
+    renderOrder()
+    await addBurgerToCart()
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+
+    await userEvent.click(screen.getByLabelText('More Cheeseburger'))
+    expect(screen.getAllByText(/270\.00/)).toHaveLength(2)
+
+    await userEvent.click(screen.getByLabelText('Fewer Cheeseburger'))
+    await userEvent.click(screen.getByLabelText('Fewer Cheeseburger'))
+
+    expect(screen.getByText(/Nothing in the cart yet/)).toBeInTheDocument()
+  })
+
+  it('totals the cart', async () => {
+    renderOrder()
+    await addBurgerToCart({ size: 'Regular' })
+    await userEvent.click(await screen.findByText('Fries'))
+    await userEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /Add 1 to cart/ }))
+
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+
+    expect(screen.getByText('Total')).toBeInTheDocument()
+    expect(screen.getByText(/160\.00/)).toBeInTheDocument()
+  })
+})
+
+// ── Checkout ─────────────────────────────────────────────────────────────────
+
+describe('Order page — takeaway checkout', () => {
+  it('asks for a name at checkout rather than gating the menu', async () => {
+    renderOrder()
+
+    // The menu is browsable immediately — no name step in the way.
+    await screen.findByText('Cheeseburger')
+    expect(screen.queryByLabelText('Your name')).not.toBeInTheDocument()
+
+    await addBurgerToCart()
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+
+    expect(screen.getByLabelText('Your name')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Place order' })).toBeDisabled()
+
+    await userEvent.type(screen.getByLabelText('Your name'), 'Alice')
+    expect(screen.getByRole('button', { name: 'Place order' })).toBeEnabled()
+  })
+
+  it('sends quantities and choices, then shows the order', async () => {
+    renderOrder()
+    await addBurgerToCart({ size: 'Large' })
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+    await userEvent.click(screen.getByLabelText('More Cheeseburger'))
+    await userEvent.type(screen.getByLabelText('Your name'), 'Alice')
+
+    await userEvent.click(screen.getByRole('button', { name: 'Place order' }))
 
     await waitFor(() => expect(orderApi.post).toHaveBeenCalled())
-    expect(orderApi.post.mock.calls[0][1].items[0].options).toEqual([
-      { option_id: 101, option_name: 'Large', group_name: 'Size' },
-      { option_id: 201, option_name: 'Bacon', group_name: 'Extras' },
+    const body = orderApi.post.mock.calls[0][1]
+    expect(body.customer_name).toBe('Alice')
+    expect(body.table_code).toBeUndefined()
+    expect(body.items).toHaveLength(1)
+    expect(body.items[0]).toMatchObject({ menu_item_id: 10, quantity: 2 })
+    expect(body.items[0].options).toEqual([
+      { option_id: 101, option_name: 'Large', group_name: 'Size', price_delta: 1500 },
     ])
+    // Lands on the orders list.
+    expect(await screen.findByText('Your orders')).toBeInTheDocument()
   })
 
-  it('does not get in the way of items with no option groups', async () => {
-    renderOrder('/order?t=t3')
-    await reachCustomise()
+  it('remembers takeaway orders for this session only', async () => {
+    renderOrder()
+    await addBurgerToCart()
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+    await userEvent.type(screen.getByLabelText('Your name'), 'Alice')
+    await userEvent.click(screen.getByRole('button', { name: 'Place order' }))
 
-    expect(screen.getByText(/Tap toppings to add them/i)).toBeInTheDocument()
-    expect(screen.getByText('Add to order')).toBeEnabled()
+    await waitFor(() => {
+      expect(JSON.parse(sessionStorage.getItem('byteorder.myOrders'))).toEqual(['abc-123'])
+    })
+  })
+})
+
+describe('Order page — table checkout', () => {
+  it('needs no name and shows the table', async () => {
+    renderOrder('/order?t=t3')
+
+    expect(await screen.findByText('Table 3')).toBeInTheDocument()
+    await addBurgerToCart()
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+
+    expect(screen.queryByLabelText('Your name')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Place order' })).toBeEnabled()
+  })
+
+  it('binds the order to the table', async () => {
+    renderOrder('/order?t=t3')
+    await addBurgerToCart()
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Place order' }))
+
+    await waitFor(() => expect(orderApi.post).toHaveBeenCalled())
+    expect(orderApi.post.mock.calls[0][1].table_code).toBe('t3')
+    // A table's orders come from the server, not this browser.
+    expect(sessionStorage.getItem('byteorder.myOrders')).toBeNull()
+  })
+
+  it('explains a rotated QR and keeps the cart', async () => {
+    orderApi.post.mockRejectedValue({
+      response: { status: 400, data: { detail: { code: 'unknown_table', message: 'Unknown table code' } } },
+    })
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+
+    renderOrder('/order?t=t3')
+    await addBurgerToCart()
+    await userEvent.click(screen.getByRole('button', { name: /Cart/ }))
+    await userEvent.click(screen.getByRole('button', { name: 'Place order' }))
+
+    expect(await screen.findByText(/This table has a new QR code/)).toBeInTheDocument()
+    expect(alertSpy).not.toHaveBeenCalled()
+    expect(screen.getByRole('button', { name: /Cart/ })).toHaveTextContent('1')
+
+    await userEvent.click(screen.getByRole('button', { name: /Keep my order as a takeaway/ }))
+    expect(screen.getByLabelText('Your name')).toBeInTheDocument()
+  })
+
+  it('degrades to takeaway when the code is not recognised at all', async () => {
+    orderApi.get.mockImplementation(path =>
+      path.includes('/by-code/')
+        ? Promise.reject({ response: { status: 404 } })
+        : Promise.resolve({ data: [] })
+    )
+    renderOrder('/order?t=bogus')
+
+    expect(await screen.findByText(/couldn't recognise that table code/i)).toBeInTheDocument()
+    expect(screen.getByText('Cheeseburger')).toBeInTheDocument()
+  })
+})
+
+// ── Orders already placed ────────────────────────────────────────────────────
+
+describe('Order page — orders list', () => {
+  const PLACED = {
+    id: 1, public_id: 'abc-123', order_number: 'BO-001', status: 'pending',
+    total: 27000, queue_position: 2, table_label: 'Table 3',
+    items: [{ id: 1, menu_item_name: 'Cheeseburger', quantity: 2, ingredients: [], options: [] }],
+  }
+
+  it('lists everything ordered at the table, from the server', async () => {
+    orderApi.get.mockImplementation(path => {
+      if (path.includes('/by-code/')) return Promise.resolve({ data: { code: 't3', label: 'Table 3' } })
+      if (path.includes('/by-table/t3')) return Promise.resolve({ data: [PLACED] })
+      return Promise.resolve({ data: [] })
+    })
+
+    renderOrder('/order?t=t3')
+    await userEvent.click(await screen.findByRole('button', { name: /Orders/ }))
+
+    expect(screen.getByText('Orders for Table 3')).toBeInTheDocument()
+    expect(screen.getByText('BO-001')).toBeInTheDocument()
+    expect(screen.getByText('2x Cheeseburger')).toBeInTheDocument()
+    expect(screen.getByText(new RegExp('270\\.00'))).toBeInTheDocument()
+    expect(screen.getByText('#2 in the queue')).toBeInTheDocument()
+  })
+
+  it('looks up remembered takeaway orders instead', async () => {
+    sessionStorage.setItem('byteorder.myOrders', JSON.stringify(['abc-123']))
+    orderApi.get.mockImplementation(path =>
+      path.includes('/track/abc-123')
+        ? Promise.resolve({ data: { ...PLACED, table_label: null } })
+        : Promise.resolve({ data: [] })
+    )
+
+    renderOrder()
+    await userEvent.click(await screen.findByRole('button', { name: /Orders/ }))
+
+    expect(await screen.findByText('BO-001')).toBeInTheDocument()
+    expect(screen.getByText('Your orders')).toBeInTheDocument()
+  })
+
+  it('links each order through to its tracking page', async () => {
+    orderApi.get.mockImplementation(path => {
+      if (path.includes('/by-code/')) return Promise.resolve({ data: { code: 't3', label: 'Table 3' } })
+      if (path.includes('/by-table/t3')) return Promise.resolve({ data: [PLACED] })
+      return Promise.resolve({ data: [] })
+    })
+
+    renderOrder('/order?t=t3')
+    await userEvent.click(await screen.findByRole('button', { name: /Orders/ }))
+
+    expect(screen.getByText('BO-001').closest('a')).toHaveAttribute('href', '/track/abc-123?t=t3')
+  })
+
+  it('says so when nothing has been ordered', async () => {
+    renderOrder('/order?t=t3')
+    await userEvent.click(await screen.findByRole('button', { name: /Orders/ }))
+
+    expect(screen.getByText(/Nothing ordered yet/)).toBeInTheDocument()
   })
 })
