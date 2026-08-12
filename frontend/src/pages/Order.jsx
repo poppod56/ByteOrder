@@ -12,6 +12,7 @@ export default function Order() {
   const tableCode = searchParams.get('t')
   const [table, setTable] = useState(null)              // { code, label } once resolved
   const [tableError, setTableError] = useState(false)
+  const [tableRotated, setTableRotated] = useState(false)
   const [resolvingTable, setResolvingTable] = useState(Boolean(tableCode))
   // A table QR carries the identity the kitchen serves by, so the name step is skipped.
   const [step, setStep] = useState(tableCode ? STEPS.CATEGORY : STEPS.NAME)
@@ -95,9 +96,21 @@ export default function Order() {
       const query = table ? `?t=${encodeURIComponent(table.code)}` : ''
       navigate(slug ? `/k/${slug}/track/${data.public_id}${query}` : `/track/${data.public_id}${query}`)
     } catch (err) {
-      alert('Failed to place order. Please try again.')
+      // The table's QR was rotated while this basket was being built. Retrying
+      // can never succeed, so say so and offer a way out that keeps the basket.
+      if (err.response?.data?.detail?.code === 'unknown_table') {
+        setTableRotated(true)
+      } else {
+        alert('Failed to place order. Please try again.')
+      }
       setSubmitting(false)
     }
+  }
+
+  function continueAsTakeaway() {
+    setTable(null)
+    setTableRotated(false)
+    setStep(STEPS.NAME)   // basket is kept — only the name is still missing
   }
 
   if (resolvingTable) {
@@ -144,6 +157,22 @@ export default function Order() {
           <p className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-xl px-4 py-3 mb-5">
             We couldn't recognise that table code — please order as a takeaway, or ask a member of staff.
           </p>
+        )}
+
+        {tableRotated && (
+          <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-xl px-4 py-3 mb-5">
+            <p className="font-semibold mb-1">This table has a new QR code</p>
+            <p className="mb-3">
+              Scan the sticker on your table again to order for {table?.label || 'your table'} — you'll
+              need to re-pick your items. Or keep this order and collect it yourself.
+            </p>
+            <button
+              onClick={continueAsTakeaway}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg"
+            >
+              Keep my order as a takeaway
+            </button>
+          </div>
         )}
 
         {/* Step: Enter name */}
@@ -293,7 +322,9 @@ export default function Order() {
               </button>
               <button
                 onClick={placeOrder}
-                disabled={basket.length === 0 || submitting}
+                // Without a table the name is what the kitchen calls out, and the
+                // basket is reachable from every step — so guard it here too.
+                disabled={basket.length === 0 || submitting || (!table && !name.trim())}
                 className="flex-1 bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-bold py-3 rounded-xl transition-colors"
               >
                 {submitting ? 'Placing…' : 'Place Order'}

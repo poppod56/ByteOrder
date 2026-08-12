@@ -21,6 +21,11 @@ ByteOrder runs in two modes:
 4. When an order is placed the print service fires a ticket to your receipt printer
 5. Customers track their order status in real time on their phone
 
+If you have tables to serve, give each one its own QR code as well — see
+[Tables](#tables). Table orders skip the name step and print the table on the
+ticket, so staff know where to take the food. The kiosk QR code stays as the
+takeaway route.
+
 ---
 
 ## Architecture
@@ -165,7 +170,7 @@ Each Clerk organisation maps to one kitchen. The admin sets a friendly slug in *
 - Kitchen name and slug
 - Brand colours (primary, background, surface, text)
 - Logo (uploaded as base64)
-- Frontend URL (used to generate the QR code)
+- Frontend URL (used to generate every QR code — kiosk and printed table codes)
 - Printer URL (for the HTTP print-service)
 
 ---
@@ -208,6 +213,48 @@ Then set the printer URL in **Admin → Settings → Printer URL** to `http://<m
 ## QR code
 
 The kiosk home screen (`/`) shows a QR code that links customers to `/order` (self-hosted) or `/k/<slug>/order` (cloud). Set **Frontend URL** in **Admin → Settings** to your public-facing address.
+
+---
+
+## Tables
+
+Table ordering is optional. Without it every order is a takeaway collected at the
+counter; with it, each table gets its own QR code and its number reaches the
+kitchen on the ticket.
+
+### Setting up
+
+1. Set **Frontend URL** in **Admin → Settings** first — printed QR codes are built
+   from it, and the admin panel is usually on a different address to the customer
+   site. Get this wrong and the whole sheet points somewhere useless.
+2. In **Admin → Tables**, add your tables. Enter a name and a count to create a
+   numbered run (`Table` × 4 gives Table 1 to Table 4), or a count of 1 to name a
+   single table exactly (`Window seat`). Names must be unique — they are what the
+   kitchen reads off the ticket.
+3. Click **Print QR sheet** and stick one code on each table.
+
+### What changes for a table order
+
+| | Kiosk QR (takeaway) | Table QR |
+|---|---|---|
+| Customer enters a name | Yes | No — the table is the identity |
+| Printed ticket | `Name: Alice` | `TABLE: Table 5` above the name |
+| Order queue / history | Marked **Takeaway** | Shows the table |
+| Tracking page | "Ready to collect" | "On its way to Table 5" |
+
+Customers can order again for the same table from the tracking page, so a second
+round does not need another scan.
+
+### Replacing a leaked code
+
+A QR code stuck on a table can be photographed and reused from anywhere. If that
+happens, use **New QR** on that table: it issues a fresh code and the old one
+stops working immediately, with no grace period. Reprint the sheet and replace
+that sticker — the admin panel keeps reminding you until you do.
+
+Renaming a table does **not** change its code, so stickers keep working. Removing
+a table stops its code working but leaves past orders showing the name they were
+placed under.
 
 ---
 

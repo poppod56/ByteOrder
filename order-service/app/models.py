@@ -13,7 +13,12 @@ class Table(Base):
     can be renamed freely — orders snapshot it at creation time.
     """
     __tablename__ = "tables"
-    __table_args__ = (UniqueConstraint("kitchen_id", "code", name="tables_kitchen_code_key"),)
+    __table_args__ = (
+        UniqueConstraint("kitchen_id", "code", name="tables_kitchen_code_key"),
+        # Labels must be unique too: the label is what lands on the ticket, and
+        # two tables sharing one tells the kitchen nothing about where to deliver.
+        UniqueConstraint("kitchen_id", "label", name="tables_kitchen_label_key"),
+    )
     id = Column(Integer, primary_key=True, index=True)
     kitchen_id = Column(String, nullable=False, index=True)
     code = Column(String, nullable=False, index=True)

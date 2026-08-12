@@ -22,6 +22,27 @@ def _code_taken(code: str, kitchen_id: str, db: Session) -> bool:
     ).first() is not None
 
 
+def _label_taken(label: str, kitchen_id: str, db: Session) -> bool:
+    """Includes deactivated tables — their label still appears in order history."""
+    return db.query(models.Table).filter(
+        models.Table.kitchen_id == kitchen_id,
+        models.Table.label == label,
+    ).first() is not None
+
+
+def _next_free_label(base: str, kitchen_id: str, db: Session) -> str:
+    """`base 1`, `base 2`, … skipping numbers already in use.
+
+    Numbering continues past existing tables rather than restarting, so adding
+    four more "Table"s to four existing ones gives Table 5-8, not a second set
+    of Table 1-4 that the kitchen could not tell apart.
+    """
+    n = 1
+    while _label_taken(f"{base} {n}", kitchen_id, db):
+        n += 1
+    return f"{base} {n}"
+
+
 def _random_code(kitchen_id: str, db: Session) -> str:
     """An unguessable code for the QR URL.
 
@@ -81,12 +102,15 @@ def create_tables(
     if data.count < 1 or data.count > 200:
         raise HTTPException(status_code=400, detail="Count must be between 1 and 200")
 
+    if data.count == 1 and _label_taken(label, kitchen_id, db):
+        raise HTTPException(status_code=409, detail=f"A table called '{label}' already exists")
+
     created = []
-    for i in range(data.count):
-        row_label = label if data.count == 1 else f"{label} {i + 1}"
+    for _ in range(data.count):
+        row_label = label if data.count == 1 else _next_free_label(label, kitchen_id, db)
         table = models.Table(kitchen_id=kitchen_id, code=_random_code(kitchen_id, db), label=row_label)
         db.add(table)
-        # Flush per row so _random_code sees codes issued earlier in this loop.
+        # Flush per row so the next iteration's lookups see what we just issued.
         db.flush()
         created.append(table)
 
@@ -114,6 +138,8 @@ def update_table(
         label = data.label.strip()
         if not label:
             raise HTTPException(status_code=400, detail="Label cannot be empty")
+        if label != table.label and _label_taken(label, kitchen_id, db):
+            raise HTTPException(status_code=409, detail=f"A table called '{label}' already exists")
         # `code` is deliberately left alone — printed QR codes must keep working.
         table.label = label
     if data.active is not None:

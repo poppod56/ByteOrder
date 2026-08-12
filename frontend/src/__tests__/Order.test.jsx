@@ -104,6 +104,60 @@ describe('Order page — scanned from a table QR', () => {
     expect(navigateSpy).toHaveBeenCalledWith('/track/abc-123?t=t3')
   })
 
+  it('explains a rotated QR instead of telling the customer to retry', async () => {
+    orderApi.post.mockRejectedValue({
+      response: { status: 400, data: { detail: { code: 'unknown_table', message: 'Unknown table code' } } },
+    })
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+
+    renderOrder('/order?t=t3')
+    await screen.findByText(/What are you having\?/i)
+    await userEvent.click(screen.getByText('Burgers'))
+    await userEvent.click(screen.getByText('Cheeseburger'))
+    await userEvent.click(screen.getByText('Add to order'))
+    await userEvent.click(screen.getByText('Place Order'))
+
+    expect(await screen.findByText(/This table has a new QR code/i)).toBeInTheDocument()
+    // The old generic "please try again" could never succeed here.
+    expect(alertSpy).not.toHaveBeenCalled()
+  })
+
+  it('lets the customer keep the basket as a takeaway order', async () => {
+    orderApi.post.mockRejectedValue({
+      response: { status: 400, data: { detail: { code: 'unknown_table', message: 'Unknown table code' } } },
+    })
+    vi.spyOn(window, 'alert').mockImplementation(() => {})
+
+    renderOrder('/order?t=t3')
+    await screen.findByText(/What are you having\?/i)
+    await userEvent.click(screen.getByText('Burgers'))
+    await userEvent.click(screen.getByText('Cheeseburger'))
+    await userEvent.click(screen.getByText('Add to order'))
+    await userEvent.click(screen.getByText('Place Order'))
+    await screen.findByText(/This table has a new QR code/i)
+
+    await userEvent.click(screen.getByText('Keep my order as a takeaway'))
+
+    // Dropped back to the name step, with the basket still in hand.
+    expect(await screen.findByText(/What's your name\?/i)).toBeInTheDocument()
+    expect(screen.getByText('Basket (1)')).toBeInTheDocument()
+  })
+
+  it('still surfaces other failures as before', async () => {
+    orderApi.post.mockRejectedValue({ response: { status: 500, data: {} } })
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {})
+
+    renderOrder('/order?t=t3')
+    await screen.findByText(/What are you having\?/i)
+    await userEvent.click(screen.getByText('Burgers'))
+    await userEvent.click(screen.getByText('Cheeseburger'))
+    await userEvent.click(screen.getByText('Add to order'))
+    await userEvent.click(screen.getByText('Place Order'))
+
+    await waitFor(() => expect(alertSpy).toHaveBeenCalled())
+    expect(screen.queryByText(/This table has a new QR code/i)).not.toBeInTheDocument()
+  })
+
   it('does not send a table_code once the lookup has failed', async () => {
     orderApi.get.mockRejectedValue({ response: { status: 404 } })
     renderOrder('/order?t=bogus')

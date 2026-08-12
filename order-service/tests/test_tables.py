@@ -295,3 +295,88 @@ def test_tables_are_scoped_per_kitchen(client, db):
     assert client.get("/orders/tables/by-code/shared").status_code == 404
     assert client.post("/orders/", json=_order(table_code="shared")).status_code == 400
     assert client.get("/orders/tables/").json() == []
+
+
+# ── Label uniqueness ─────────────────────────────────────────────────────────
+# The label is what lands on the printed ticket, so two tables sharing one
+# leaves the kitchen unable to tell where the food goes.
+
+def test_duplicate_single_label_is_rejected(client):
+    _make_table(client, "Patio")
+    response = client.post("/orders/tables/", json={"label": "Patio"})
+    assert response.status_code == 409
+    assert "Patio" in response.json()["detail"]
+
+
+def test_bulk_create_continues_numbering_instead_of_restarting(client):
+    first = client.post("/orders/tables/", json={"label": "Table", "count": 4}).json()
+    second = client.post("/orders/tables/", json={"label": "Table", "count": 4}).json()
+
+    assert [t["label"] for t in first] == ["Table 1", "Table 2", "Table 3", "Table 4"]
+    assert [t["label"] for t in second] == ["Table 5", "Table 6", "Table 7", "Table 8"]
+
+
+def test_single_create_uses_the_label_verbatim(client):
+    """count=1 is how a table gets a real name rather than a number."""
+    assert _make_table(client, "Window seat")["label"] == "Window seat"
+
+
+def test_bulk_create_skips_labels_already_taken(client):
+    tables = client.post("/orders/tables/", json={"label": "Table", "count": 3}).json()
+    client.delete(f"/orders/tables/{tables[1]['id']}")   # deactivate "Table 2"
+
+    added = client.post("/orders/tables/", json={"label": "Table", "count": 2}).json()
+    # "Table 2" is deactivated but still named in past orders, so it stays reserved.
+    assert [t["label"] for t in added] == ["Table 4", "Table 5"]
+
+
+def test_rename_onto_an_existing_label_is_rejected(client):
+    _make_table(client, "Patio")
+    other = _make_table(client, "Garden")
+
+    response = client.put(f"/orders/tables/{other['id']}", json={"label": "Patio"})
+    assert response.status_code == 409
+
+
+def test_rename_to_its_own_label_is_allowed(client):
+    table = _make_table(client, "Patio")
+    response = client.put(f"/orders/tables/{table['id']}", json={"label": "Patio"})
+    assert response.status_code == 200
+
+
+def test_a_deactivated_table_still_reserves_its_label(client):
+    table = _make_table(client, "Seasonal")
+    client.delete(f"/orders/tables/{table['id']}")
+    assert client.post("/orders/tables/", json={"label": "Seasonal"}).status_code == 409
+
+
+def test_labels_are_unique_only_within_a_kitchen(client, db):
+    from app import models
+
+    db.add(models.Table(kitchen_id="other-kitchen", code="theircode1", label="Patio"))
+    db.commit()
+
+    assert client.post("/orders/tables/", json={"label": "Patio"}).status_code == 201
+
+
+# ── Error shape for a rotated-away code ──────────────────────────────────────
+
+def test_unknown_table_code_error_is_machine_readable(client):
+    """The customer app must tell this apart from other 400s to explain it."""
+    response = client.post("/orders/", json=_order(table_code="gone-forever"))
+    assert response.status_code == 400
+    assert response.json()["detail"]["code"] == "unknown_table"
+
+
+def test_rotated_code_reports_unknown_table(client):
+    table = _make_table(client, "Table 1")
+    client.post(f"/orders/tables/{table['id']}/rotate")
+
+    response = client.post("/orders/", json=_order(table_code=table["code"]))
+    assert response.json()["detail"]["code"] == "unknown_table"
+
+
+def test_missing_name_error_is_distinct_from_unknown_table(client):
+    response = client.post("/orders/", json=_order(customer_name="  "))
+    assert response.status_code == 400
+    assert response.json()["detail"] != {"code": "unknown_table", "message": "Unknown table code"}

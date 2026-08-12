@@ -70,7 +70,13 @@ def _resolve_table(table_code: str | None, kitchen_id: str, db: Session) -> mode
         models.Table.active.is_(True),
     ).first()
     if not table:
-        raise HTTPException(status_code=400, detail="Unknown table code")
+        # Structured detail: the customer app has to tell this apart from the
+        # other 400s so it can explain that the QR was replaced, rather than
+        # telling the customer to retry something that can never succeed.
+        raise HTTPException(status_code=400, detail={
+            "code": "unknown_table",
+            "message": "Unknown table code",
+        })
     return table
 
 
