@@ -90,7 +90,10 @@ export default function Order() {
         items: basket,
         ...(table ? { table_code: table.code } : {}),
       })
-      navigate(slug ? `/k/${slug}/track/${data.public_id}` : `/track/${data.public_id}`)
+      // Carry the table through so the tracking page can offer another round
+      // without the customer having to walk back to the sticker and re-scan.
+      const query = table ? `?t=${encodeURIComponent(table.code)}` : ''
+      navigate(slug ? `/k/${slug}/track/${data.public_id}${query}` : `/track/${data.public_id}${query}`)
     } catch (err) {
       alert('Failed to place order. Please try again.')
       setSubmitting(false)

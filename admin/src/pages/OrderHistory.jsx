@@ -52,6 +52,11 @@ export default function OrderHistory() {
           <div key={order.id} className="bg-brand-surface rounded-xl shadow p-4 flex flex-col gap-3">
             <div className="flex items-start justify-between">
               <div>
+                {order.table_label ? (
+                  <p className="font-bold text-xl text-brand-text leading-tight">{order.table_label}</p>
+                ) : (
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Takeaway</p>
+                )}
                 <p className="font-bold text-lg text-brand-text">{order.order_number}</p>
                 <p className="text-gray-600">{order.customer_name}</p>
               </div>

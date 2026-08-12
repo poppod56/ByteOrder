@@ -28,6 +28,64 @@ def test_format_order_includes_customer_and_items():
     assert "1x Burger" in receipt
 
 
+def test_format_order_includes_table_above_customer():
+    order = {
+        "order_number": "0002",
+        "customer_name": "Table 5",
+        "table_label": "Table 5",
+        "items": [],
+    }
+    receipt = _format_order(order)
+    assert "TABLE: Table 5" in receipt
+    # Staff read the table to know where the food goes, so it comes first.
+    assert receipt.index("TABLE: Table 5") < receipt.index("Customer:")
+
+
+def test_format_order_omits_table_for_takeaway():
+    order = {"order_number": "0003", "customer_name": "Dave", "items": []}
+    assert "TABLE" not in _format_order(order)
+
+    order["table_label"] = None
+    assert "TABLE" not in _format_order(order)
+
+
+def test_format_order_renders_ingredients_from_the_published_payload():
+    """The payload carries ingredients/options, not the notes field this used to read."""
+    order = {
+        "order_number": "0004",
+        "customer_name": "Erin",
+        "items": [
+            {
+                "name": "Salad",
+                "ingredients": [
+                    {"name": "Lettuce", "included": True},
+                    {"name": "Onion", "included": False},
+                ],
+                "options": [
+                    {"group": "Size", "name": "Large"},
+                    {"group": "Size", "name": "Extra Sauce"},
+                ],
+            }
+        ],
+    }
+    receipt = _format_order(order)
+    assert "With: Lettuce" in receipt
+    assert "NO:   Onion" in receipt
+    assert "Size: Large, Extra Sauce" in receipt
+
+
+def test_format_order_handles_items_without_customisations():
+    order = {
+        "order_number": "0005",
+        "customer_name": "Frank",
+        "items": [{"name": "Burger", "ingredients": [], "options": []}],
+    }
+    receipt = _format_order(order)
+    assert "1x Burger" in receipt
+    assert "With:" not in receipt
+    assert "NO:" not in receipt
+
+
 # ── run — reconnect behaviour ─────────────────────────────────────────────────
 
 def _mock_sse_response(events_data):

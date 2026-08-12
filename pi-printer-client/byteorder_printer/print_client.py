@@ -16,13 +16,24 @@ RECONNECT_DELAY = 5  # seconds between SSE reconnect attempts
 
 
 def _format_order(order: dict) -> str:
-    """Convert an order dict to a plain-text receipt string."""
+    """Convert an order dict to a plain-text receipt string.
+
+    The order dict is the payload published by order-service's create_order.
+    print-service has a second formatter over the same payload — anything added
+    to one ticket has to be added to the other, or the two printer backends
+    print different things.
+    """
     lines = []
     lines.append("=" * 32)
     # Redis payload uses order_number; fall back to order_id then unknown
     order_ref = order.get("order_number") or str(order.get("order_id", "?"))
     lines.append(f"ORDER #{order_ref}")
     lines.append("=" * 32)
+
+    # Table first: it is what staff read to know where the food goes. Absent for
+    # takeaway orders placed from the kiosk QR.
+    if order.get("table_label"):
+        lines.append(f"TABLE: {order['table_label']}")
 
     customer = order.get("customer_name") or order.get("customer_phone") or ""
     if customer:
@@ -36,6 +47,20 @@ def _format_order(order: dict) -> str:
         lines.append(f"  {qty}x {name}")
         if notes:
             lines.append(f"     * {notes}")
+
+        ingredients = item.get("ingredients") or []
+        included = [i["name"] for i in ingredients if i.get("included")]
+        excluded = [i["name"] for i in ingredients if not i.get("included")]
+        if included:
+            lines.append(f"     With: {', '.join(included)}")
+        if excluded:
+            lines.append(f"     NO:   {', '.join(excluded)}")
+
+        options_by_group: dict[str, list[str]] = {}
+        for opt in item.get("options") or []:
+            options_by_group.setdefault(opt.get("group", ""), []).append(opt["name"])
+        for group, opts in options_by_group.items():
+            lines.append(f"     {group}: {', '.join(opts)}")
 
     if order.get("notes"):
         lines.append("")

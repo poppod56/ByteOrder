@@ -158,6 +158,9 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
     # Publish to Redis for print-service and queue watchers
     redis = get_redis()
     redis.publish(f"queue_updates:{kitchen_id}", json.dumps({"order_id": order.id, "status": order.status}))
+    # Ticket payload. Two independent formatters consume this — print-service's
+    # format_order() and pi-printer-client's _format_order() — so a field added
+    # here has to be rendered in both or the printer backends disagree.
     order_payload = json.dumps({
         "order_id": order.id,
         "order_number": order.order_number,
