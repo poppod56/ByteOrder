@@ -43,12 +43,41 @@ def _queue_position(order: models.Order, db: Session) -> int | None:
     return ahead + 1
 
 
+def _resolve_table(table_code: str | None, kitchen_id: str, db: Session) -> models.Table | None:
+    """Look up the table for a scanned QR code, or None for a takeaway order.
+
+    An unknown code is rejected rather than silently dropped — a mis-printed QR
+    must fail loudly instead of producing orders the kitchen can't deliver.
+    """
+    if not table_code:
+        return None
+    table = db.query(models.Table).filter(
+        models.Table.kitchen_id == kitchen_id,
+        models.Table.code == table_code.strip().lower(),
+        models.Table.active.is_(True),
+    ).first()
+    if not table:
+        raise HTTPException(status_code=400, detail="Unknown table code")
+    return table
+
+
 @router.post("/", response_model=schemas.OrderOut, status_code=201)
 def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitchen_id)):
+    table = _resolve_table(data.table_code, kitchen_id, db)
+
+    # With a table the name is optional — the label is what the kitchen serves by.
+    customer_name = data.customer_name.strip()
+    if not customer_name:
+        if not table:
+            raise HTTPException(status_code=400, detail="customer_name is required")
+        customer_name = table.label
+
     order = models.Order(
         order_number=_next_order_number(db),
-        customer_name=data.customer_name,
+        customer_name=customer_name,
         kitchen_id=kitchen_id,
+        table_id=table.id if table else None,
+        table_label=table.label if table else None,
     )
     db.add(order)
     db.flush()
@@ -87,6 +116,7 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
         "order_id": order.id,
         "order_number": order.order_number,
         "customer_name": order.customer_name,
+        "table_label": order.table_label,
         "kitchen_id": order.kitchen_id,
         "items": [
             {

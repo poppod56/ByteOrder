@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate } from 'react-router-dom'
+import { useNavigate, useSearchParams } from 'react-router-dom'
 import { menuApi, orderApi } from '../lib/api'
 import { useKitchen } from '../contexts/KitchenContext'
 
@@ -8,7 +8,13 @@ const STEPS = { NAME: 'name', CATEGORY: 'category', ITEM: 'item', CUSTOMISE: 'cu
 export default function Order() {
   const navigate = useNavigate()
   const { slug } = useKitchen()
-  const [step, setStep] = useState(STEPS.NAME)
+  const [searchParams] = useSearchParams()
+  const tableCode = searchParams.get('t')
+  const [table, setTable] = useState(null)              // { code, label } once resolved
+  const [tableError, setTableError] = useState(false)
+  const [resolvingTable, setResolvingTable] = useState(Boolean(tableCode))
+  // A table QR carries the identity the kitchen serves by, so the name step is skipped.
+  const [step, setStep] = useState(tableCode ? STEPS.CATEGORY : STEPS.NAME)
   const [name, setName] = useState('')
   const [categories, setCategories] = useState([])
   const [selectedCat, setSelectedCat] = useState(null)
@@ -24,6 +30,27 @@ export default function Order() {
       if (data.value) setKitchenName(data.value)
     }).catch(() => {})
   }, [])
+
+  // Resolve ?t=<code> to a table. An unrecognised code degrades to a normal
+  // takeaway order rather than dead-ending the customer — placing the order with
+  // a bad code would be rejected by the API.
+  useEffect(() => {
+    if (!tableCode) return
+    let cancelled = false
+    orderApi.get(`/orders/tables/by-code/${encodeURIComponent(tableCode)}`)
+      .then(({ data }) => {
+        if (cancelled) return
+        setTable(data)
+        setResolvingTable(false)
+      })
+      .catch(() => {
+        if (cancelled) return
+        setTableError(true)
+        setResolvingTable(false)
+        setStep(STEPS.NAME)
+      })
+    return () => { cancelled = true }
+  }, [tableCode])
 
   function startCustomise(item) {
     setSelectedItem(item)
@@ -58,7 +85,11 @@ export default function Order() {
     if (basket.length === 0) return
     setSubmitting(true)
     try {
-      const { data } = await orderApi.post('/orders/', { customer_name: name, items: basket })
+      const { data } = await orderApi.post('/orders/', {
+        customer_name: name,
+        items: basket,
+        ...(table ? { table_code: table.code } : {}),
+      })
       navigate(slug ? `/k/${slug}/track/${data.public_id}` : `/track/${data.public_id}`)
     } catch (err) {
       alert('Failed to place order. Please try again.')
@@ -66,10 +97,21 @@ export default function Order() {
     }
   }
 
+  if (resolvingTable) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-brand-bg">
+        <div className="w-8 h-8 border-4 border-brand-600 border-t-transparent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
+  // With a table there is no name step to go back to.
+  const showBack = step !== STEPS.NAME && !(table && step === STEPS.CATEGORY)
+
   return (
     <div className="min-h-screen bg-brand-bg">
       <header className="bg-brand-600 text-white px-4 py-4 flex items-center gap-3">
-        {step !== STEPS.NAME && (
+        {showBack && (
           <button onClick={() => {
             if (step === STEPS.CATEGORY) setStep(STEPS.NAME)
             else if (step === STEPS.ITEM) setStep(STEPS.CATEGORY)
@@ -78,6 +120,11 @@ export default function Order() {
           }} className="text-white text-xl">←</button>
         )}
         <h1 className="text-xl font-bold">{kitchenName}</h1>
+        {table && (
+          <span className="bg-white/20 text-white text-sm font-semibold px-2.5 py-1 rounded-lg">
+            {table.label}
+          </span>
+        )}
         {basket.length > 0 && step !== STEPS.BASKET && (
           <button
             onClick={() => setStep(STEPS.BASKET)}
@@ -89,6 +136,12 @@ export default function Order() {
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-6">
+
+        {tableError && (
+          <p className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-xl px-4 py-3 mb-5">
+            We couldn't recognise that table code — please order as a takeaway, or ask a member of staff.
+          </p>
+        )}
 
         {/* Step: Enter name */}
         {step === STEPS.NAME && (
@@ -117,7 +170,9 @@ export default function Order() {
         {/* Step: Choose category */}
         {step === STEPS.CATEGORY && (
           <div>
-            <h2 className="text-2xl font-bold text-brand-text mb-6">Hi {name}! What are you having?</h2>
+            <h2 className="text-2xl font-bold text-brand-text mb-6">
+              {table ? 'What are you having?' : `Hi ${name}! What are you having?`}
+            </h2>
             <div className="grid grid-cols-2 gap-3">
               {categories.map(cat => (
                 <button

@@ -8,6 +8,7 @@ export default function Settings() {
   const { organization } = useOrganization()
 
   const [printerUrl, setPrinterUrl] = useState('')
+  const [frontendUrl, setFrontendUrl] = useState('')
   const [kitchenName, setKitchenName] = useState('')
   const [logo, setLogo] = useState('')
   const [brandPrimary, setBrandPrimary] = useState('#ea580c')
@@ -25,6 +26,7 @@ export default function Settings() {
     api.get('/settings/').then(({ data }) => {
       const map = Object.fromEntries(data.map(s => [s.key, s.value || '']))
       setPrinterUrl(map.printer_url || '')
+      setFrontendUrl(map.frontend_url || '')
       if (map.kitchen_name) {
         setKitchenName(map.kitchen_name)
       } else if (organization?.name) {
@@ -100,6 +102,7 @@ export default function Settings() {
     try {
       await Promise.all([
         api.put('/settings/printer_url',   { value: printerUrl }),
+        api.put('/settings/frontend_url',  { value: frontendUrl.trim().replace(/\/+$/, '') }),
         api.put('/settings/kitchen_name',  { value: kitchenName }),
         api.put('/settings/logo',          { value: logo }),
         api.put('/settings/brand_primary', { value: brandPrimary }),
@@ -172,6 +175,19 @@ export default function Settings() {
             </p>
           )}
           <p className="text-xs text-gray-400 mt-1">Lowercase letters, numbers and hyphens only</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Customer site URL</label>
+          <input
+            value={frontendUrl}
+            onChange={e => setFrontendUrl(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+            placeholder="https://order.my-kitchen.com"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Public address customers reach — used to build printed table QR codes. Leave blank to guess from this admin URL.
+          </p>
         </div>
 
         <div>

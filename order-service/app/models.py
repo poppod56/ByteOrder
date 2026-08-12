@@ -1,8 +1,25 @@
 import uuid
 from datetime import datetime
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
+
+
+class Table(Base):
+    """A physical table a customer can order from.
+
+    `code` is what appears in the QR URL (?t=a1) and must stay stable once the
+    QR is printed and stuck on the table. `label` is the human-facing name and
+    can be renamed freely — orders snapshot it at creation time.
+    """
+    __tablename__ = "tables"
+    __table_args__ = (UniqueConstraint("kitchen_id", "code", name="tables_kitchen_code_key"),)
+    id = Column(Integer, primary_key=True, index=True)
+    kitchen_id = Column(String, nullable=False, index=True)
+    code = Column(String, nullable=False, index=True)
+    label = Column(String, nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
+    created_at = Column(DateTime, default=datetime.utcnow)
 
 
 class Order(Base):
@@ -13,6 +30,10 @@ class Order(Base):
     order_number = Column(String, unique=True, nullable=False)
     customer_name = Column(String, nullable=False)
     status = Column(String, default="pending")  # pending, in_progress, ready, completed
+    # NULL table_id means takeaway — ordered from the kiosk QR, not a table QR.
+    table_id = Column(Integer, ForeignKey("tables.id"), nullable=True)
+    # Denormalised so renaming or deleting a table never rewrites order history.
+    table_label = Column(String, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")

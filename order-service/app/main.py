@@ -5,7 +5,7 @@ from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
-from app.routers import orders, printers
+from app.routers import orders, printers, tables
 
 _otel_exporter_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
 if _otel_exporter_endpoint or settings.otel_endpoint:
@@ -62,6 +62,11 @@ def _run_migrations():
             END $$
         """))
         conn.execute(text("ALTER TABLE printer_devices ADD COLUMN IF NOT EXISTS ip_address VARCHAR"))
+        # Table-scoped ordering. Both nullable: NULL means takeaway (kiosk QR).
+        # No FK added here — create_all handles fresh installs, and adding one to
+        # an existing table would fail startup if legacy rows ever held bad ids.
+        conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_id INTEGER"))
+        conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_label VARCHAR"))
         conn.commit()
 
 
@@ -81,8 +86,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(orders.router)
+# tables and printers must be registered before orders: the orders router owns
+# /orders/{order_id}, which would otherwise swallow /orders/tables and fail to
+# parse the literal segment as an int.
+app.include_router(tables.router)
 app.include_router(printers.router)
+app.include_router(orders.router)
 
 if _otel_exporter_endpoint or settings.otel_endpoint:
     from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor

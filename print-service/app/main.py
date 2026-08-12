@@ -120,6 +120,11 @@ def format_order(order: dict, kitchen_id: str) -> dict:
     lines = [
         f"{kitchen}",
         f"Order: {order['order_number']}",
+    ]
+    # Table first and unabbreviated — it's what staff read to deliver the food.
+    if order.get("table_label"):
+        lines.append(f"TABLE: {order['table_label']}")
+    lines += [
         f"Name:  {order['customer_name']}",
         "",
     ]

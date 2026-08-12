@@ -8,6 +8,7 @@ import OrderQueue from './pages/OrderQueue'
 import OrderHistory from './pages/OrderHistory'
 import MenuManagement from './pages/MenuManagement'
 import Ingredients from './pages/Ingredients'
+import Tables from './pages/Tables'
 import Printers from './pages/Printers'
 import Settings from './pages/Settings'
 
@@ -52,6 +53,7 @@ export default function App({ authMode }) {
         <Route path="history" element={<OrderHistory />} />
         <Route path="menu" element={<MenuManagement />} />
         <Route path="ingredients" element={<Ingredients />} />
+        <Route path="tables" element={<Tables />} />
         <Route path="printers" element={<Printers />} />
         <Route path="settings" element={<Settings />} />
       </Route>
