@@ -4,9 +4,23 @@ import api from '../lib/api'
 
 const MAX_LOGO_BYTES = 512 * 1024  // 512 KB
 
-export default function Settings() {
-  const { organization } = useOrganization()
+/**
+ * useOrganization throws outside a ClerkProvider, which self-hosted deployments
+ * never mount — so the hook is confined to a component that only renders in
+ * cloud mode, and the form itself takes the organisation as a plain prop.
+ */
+export default function Settings({ authMode }) {
+  return authMode === 'cloud'
+    ? <SettingsWithClerkOrg />
+    : <SettingsForm organization={null} />
+}
 
+function SettingsWithClerkOrg() {
+  const { organization } = useOrganization()
+  return <SettingsForm organization={organization} />
+}
+
+function SettingsForm({ organization }) {
   const [printerUrl, setPrinterUrl] = useState('')
   const [frontendUrl, setFrontendUrl] = useState('')
   const [kitchenName, setKitchenName] = useState('')

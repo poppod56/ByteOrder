@@ -21,12 +21,20 @@ function ApiSetup() {
   return null
 }
 
+// Clerk hooks throw outside a ClerkProvider, so every call has to live in a
+// component that only ever renders in cloud mode. Layout is shared by both
+// modes, which is why signing out is handed to it as a prop.
+function CloudLayout() {
+  const { signOut } = useClerk()
+  return <Layout onSignOut={() => signOut()} />
+}
+
 function CloudProtectedLayout() {
   return (
     <>
       <SignedIn>
         <ApiSetup />
-        <Layout />
+        <CloudLayout />
       </SignedIn>
       <SignedOut><RedirectToSignIn /></SignedOut>
     </>
@@ -34,9 +42,18 @@ function CloudProtectedLayout() {
 }
 
 // ── Self-hosted: localStorage JWT protected layout ────────────────────────────
+
+// Mirrors what the api interceptor does on a 401.
+function selfHostedSignOut() {
+  localStorage.removeItem('token')
+  window.location.href = '/login'
+}
+
 function SelfHostedProtectedLayout() {
   useEffect(() => setupSelfHostedInterceptors(), [])
-  return localStorage.getItem('token') ? <Layout /> : <Navigate to="/login" replace />
+  return localStorage.getItem('token')
+    ? <Layout onSignOut={selfHostedSignOut} />
+    : <Navigate to="/login" replace />
 }
 
 export default function App({ authMode }) {
@@ -55,7 +72,7 @@ export default function App({ authMode }) {
         <Route path="ingredients" element={<Ingredients />} />
         <Route path="tables" element={<Tables />} />
         <Route path="printers" element={<Printers />} />
-        <Route path="settings" element={<Settings />} />
+        <Route path="settings" element={<Settings authMode={authMode} />} />
       </Route>
     </Routes>
   )

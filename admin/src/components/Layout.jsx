@@ -1,6 +1,5 @@
 import { useState, useEffect } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
-import { useClerk } from '@clerk/clerk-react'
 import api from '../lib/api'
 
 const nav = [
@@ -13,8 +12,10 @@ const nav = [
   { to: '/settings', label: 'Settings' },
 ]
 
-export default function Layout() {
-  const { signOut } = useClerk()
+// onSignOut is supplied by the mode-specific wrapper in App: Clerk's signOut in
+// cloud mode, clearing the local JWT in self-hosted. Keeping it out of here is
+// what lets this component render in both.
+export default function Layout({ onSignOut }) {
   const [kitchenName, setKitchenName] = useState('ByteOrder')
 
   useEffect(() => {
@@ -39,7 +40,7 @@ export default function Layout() {
       <header className="bg-brand-600 text-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
           <span className="text-xl font-bold tracking-tight">{kitchenName} Admin</span>
-          <button onClick={() => signOut()} className="text-sm underline hover:no-underline">Log out</button>
+          <button onClick={onSignOut} className="text-sm underline hover:no-underline">Log out</button>
         </div>
       </header>
 
