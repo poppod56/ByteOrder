@@ -32,9 +32,23 @@ class MenuItem(Base):
     description = Column(Text, nullable=True)
     active = Column(Boolean, default=True)
     sort_order = Column(Integer, default=0)
+    # Minor units (satang/cents) as an integer: menu maths has to be exact, and
+    # floats cannot represent most prices. NULL means no price has been set.
+    price = Column(Integer, nullable=True)
+    # Base64 payload, deliberately excluded from list responses — twenty items
+    # would otherwise put megabytes of image data in every menu fetch. Served
+    # instead by GET /items/{id}/image, which the browser can cache.
+    image = Column(Text, nullable=True)
+    image_mime = Column(String, nullable=True)
+
     category = relationship("Category", back_populates="items")
     item_ingredients = relationship("MenuItemIngredient", back_populates="menu_item", cascade="all, delete-orphan")
     option_groups = relationship("OptionGroup", back_populates="menu_item", cascade="all, delete-orphan")
+
+    @property
+    def has_image(self) -> bool:
+        """Read by MenuItemOut so every endpoint reports it without remembering to."""
+        return bool(self.image)
 
 
 class Ingredient(Base):
@@ -52,6 +66,9 @@ class MenuItemIngredient(Base):
     menu_item_id = Column(Integer, ForeignKey("menu_items.id"), nullable=False)
     ingredient_id = Column(Integer, ForeignKey("ingredients.id"), nullable=False)
     is_default = Column(Boolean, default=True)
+    # Charged when the customer switches this topping on. Minor units, and may be
+    # negative for a discount when something is left out.
+    price_delta = Column(Integer, nullable=False, default=0)
     menu_item = relationship("MenuItem", back_populates="item_ingredients")
     ingredient = relationship("Ingredient", back_populates="item_ingredients")
 
@@ -73,6 +90,7 @@ class Option(Base):
     id = Column(Integer, primary_key=True, index=True)
     group_id = Column(Integer, ForeignKey("option_groups.id"), nullable=False)
     name = Column(String, nullable=False)
+    price_delta = Column(Integer, nullable=False, default=0)
     group = relationship("OptionGroup", back_populates="options")
 
 

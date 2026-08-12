@@ -1,10 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException
+import base64
+import binascii
+import re
+
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import get_db
 from app.auth import get_kitchen_id
 
 router = APIRouter(prefix="/items", tags=["items"])
+
+MAX_IMAGE_BYTES = 512 * 1024   # matches the kitchen logo limit
+_ALLOWED_IMAGE_MIMES = {"image/png", "image/jpeg", "image/webp", "image/gif"}
+# Only raster formats: an SVG would be served back to browsers and can carry script.
+_DATA_URL = re.compile(r"^data:(?P<mime>[a-zA-Z0-9/+.-]+);base64,(?P<payload>.+)$", re.DOTALL)
 
 
 @router.get("/", response_model=list[schemas.MenuItemOut])
@@ -56,6 +65,81 @@ def delete_item(item_id: int, db: Session = Depends(get_db), kitchen_id: str = D
 
 
 # Ingredients on an item (scoped via menu_item.kitchen_id)
+def _get_item(item_id: int, kitchen_id: str, db: Session) -> models.MenuItem:
+    item = db.query(models.MenuItem).filter(
+        models.MenuItem.id == item_id,
+        models.MenuItem.kitchen_id == kitchen_id,
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+    return item
+
+
+# ── Item image ────────────────────────────────────────────────────────────────
+# Stored as base64 but served as binary so browsers cache it and the menu list
+# stays free of image payloads.
+
+@router.get("/{item_id}/image")
+def get_item_image(item_id: int, db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitchen_id)):
+    item = _get_item(item_id, kitchen_id, db)
+    if not item.image:
+        raise HTTPException(status_code=404, detail="No image for this item")
+    return Response(
+        content=base64.b64decode(item.image),
+        media_type=item.image_mime or "application/octet-stream",
+        headers={"Cache-Control": "public, max-age=300"},
+    )
+
+
+@router.put("/{item_id}/image", response_model=schemas.MenuItemOut)
+def set_item_image(
+    item_id: int,
+    data: schemas.MenuItemImageIn,
+    db: Session = Depends(get_db),
+    kitchen_id: str = Depends(get_kitchen_id),
+):
+    item = _get_item(item_id, kitchen_id, db)
+
+    match = _DATA_URL.match(data.data_url.strip())
+    if not match:
+        raise HTTPException(status_code=400, detail="Expected a base64 data URL")
+
+    mime = match.group("mime").lower()
+    if mime not in _ALLOWED_IMAGE_MIMES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unsupported image type '{mime}' — use PNG, JPEG, WebP or GIF",
+        )
+
+    payload = match.group("payload")
+    try:
+        raw = base64.b64decode(payload, validate=True)
+    except (binascii.Error, ValueError):
+        raise HTTPException(status_code=400, detail="Image data is not valid base64")
+
+    if len(raw) > MAX_IMAGE_BYTES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Image must be under {MAX_IMAGE_BYTES // 1024} KB (this one is {len(raw) // 1024} KB)",
+        )
+
+    item.image = payload
+    item.image_mime = mime
+    db.commit()
+    db.refresh(item)
+    return item
+
+
+@router.delete("/{item_id}/image", response_model=schemas.MenuItemOut)
+def delete_item_image(item_id: int, db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitchen_id)):
+    item = _get_item(item_id, kitchen_id, db)
+    item.image = None
+    item.image_mime = None
+    db.commit()
+    db.refresh(item)
+    return item
+
+
 @router.get("/{item_id}/ingredients", response_model=list[schemas.MenuItemIngredientOut])
 def list_item_ingredients(item_id: int, db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitchen_id)):
     item = db.query(models.MenuItem).filter(models.MenuItem.id == item_id, models.MenuItem.kitchen_id == kitchen_id).first()

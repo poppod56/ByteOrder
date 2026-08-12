@@ -33,6 +33,7 @@ class OrderItemIngredientOut(BaseModel):
     ingredient_id: int
     ingredient_name: str
     included: bool
+    price_delta: int = 0
     model_config = {"from_attributes": True}
 
 
@@ -40,6 +41,7 @@ class OrderItemOptionOut(BaseModel):
     option_id: int
     option_name: str
     group_name: str
+    price_delta: int = 0
     model_config = {"from_attributes": True}
 
 
@@ -47,6 +49,7 @@ class OrderItemOut(BaseModel):
     id: int
     menu_item_id: int
     menu_item_name: str
+    unit_price: Optional[int] = None
     ingredients: list[OrderItemIngredientOut] = []
     options: list[OrderItemOptionOut] = []
     model_config = {"from_attributes": True}
@@ -62,6 +65,7 @@ class OrderOut(BaseModel):
     updated_at: datetime
     table_id: Optional[int] = None
     table_label: Optional[str] = None
+    total: Optional[int] = None
     items: list[OrderItemOut] = []
     queue_position: Optional[int] = None
     model_config = {"from_attributes": True}

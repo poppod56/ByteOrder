@@ -115,8 +115,19 @@ def get_kitchen_name(kitchen_id: str) -> str:
     return row[0] if row and row[0] else "ByteOrder Kitchen"
 
 
+def money(minor: int | None, currency: str) -> str:
+    """Minor units to a printable amount. Prices are stored as integers so this
+    is the only place rounding happens."""
+    if minor is None:
+        return ""
+    return f"{minor / 100:,.2f} {currency}"
+
+
 def format_order(order: dict, kitchen_id: str) -> dict:
     kitchen = get_kitchen_name(kitchen_id)
+    # Carried on the payload rather than read here, so this formatter and
+    # pi-printer-client's cannot disagree about the currency.
+    currency = order.get("currency") or "THB"
     lines = [
         f"{kitchen}",
         f"Order: {order['order_number']}",
@@ -130,13 +141,17 @@ def format_order(order: dict, kitchen_id: str) -> dict:
     ]
 
     for item in order["items"]:
-        lines.append(f">> {item['name']}")
+        unit = item.get("unit_price")
+        lines.append(f">> {item['name']}" + (f"   {money(unit, currency)}" if unit is not None else ""))
 
         included = [i["name"] for i in item.get("ingredients", []) if i["included"]]
         excluded = [i["name"] for i in item.get("ingredients", []) if not i["included"]]
 
         if included:
             lines.append(f"   With: {', '.join(included)}")
+        for i in item.get("ingredients", []):
+            if i["included"] and i.get("price_delta"):
+                lines.append(f"     + {i['name']}  {money(i['price_delta'], currency)}")
         if excluded:
             lines.append(f"   NO:   {', '.join(excluded)}")
 
@@ -145,7 +160,15 @@ def format_order(order: dict, kitchen_id: str) -> dict:
             options_by_group.setdefault(opt["group"], []).append(opt["name"])
         for group, opts in options_by_group.items():
             lines.append(f"   {group}: {', '.join(opts)}")
+        for opt in item.get("options", []):
+            if opt.get("price_delta"):
+                lines.append(f"     + {opt['name']}  {money(opt['price_delta'], currency)}")
 
+        lines.append("")
+
+    if order.get("total") is not None:
+        lines.append("-" * 32)
+        lines.append(f"TOTAL: {money(order['total'], currency)}")
         lines.append("")
 
     return {"text": "\n".join(lines)}

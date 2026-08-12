@@ -92,7 +92,31 @@ def _run_migrations(engine=None):
                         END $$
                     """))
 
+        # Prices and images. Added together so an install migrates once, and as
+        # nullable/defaulted columns so existing rows need no back-fill.
+        _add_columns(conn, insp, existing_tables, 'menu_items', {
+            'price': 'INTEGER',
+            'image': 'TEXT',
+            'image_mime': 'VARCHAR',
+        })
+        _add_columns(conn, insp, existing_tables, 'menu_item_ingredients', {
+            'price_delta': 'INTEGER NOT NULL DEFAULT 0',
+        })
+        _add_columns(conn, insp, existing_tables, 'options', {
+            'price_delta': 'INTEGER NOT NULL DEFAULT 0',
+        })
+
         conn.commit()
+
+
+def _add_columns(conn, insp, existing_tables, table_name, columns):
+    """Add any of `columns` that the table does not already have."""
+    if table_name not in existing_tables:
+        return   # create_all builds it complete on a fresh install
+    have = {c['name'] for c in insp.get_columns(table_name)}
+    for name, ddl in columns.items():
+        if name not in have:
+            conn.execute(text(f"ALTER TABLE {table_name} ADD COLUMN {name} {ddl}"))
 
 
 def _seed_self_hosted():
