@@ -1,20 +1,34 @@
 import { useState, useEffect, useRef } from 'react'
-import { useParams, useNavigate, Link } from 'react-router-dom'
+import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
 import { orderApi } from '../lib/api'
 import { useKitchen } from '../contexts/KitchenContext'
 
 const STATUS_STEPS = ['pending', 'in_progress', 'ready']
-const STATUS_LABELS = { pending: 'Order received', in_progress: 'Being prepared', ready: 'Ready to collect!' }
-const STATUS_DESCRIPTIONS = {
-  pending: "Your order is in the queue. Sit tight!",
-  in_progress: "The chef is working on your order now.",
-  ready: "Your order is ready — come and get it!",
-}
+
+// Table orders are served where the customer is sitting, so the collection
+// wording is actively wrong for them — it sends a seated customer to a counter
+// while staff are carrying their food the other way.
+const statusLabels = tableLabel => ({
+  pending: 'Order received',
+  in_progress: 'Being prepared',
+  ready: tableLabel ? 'On its way!' : 'Ready to collect!',
+})
+const statusDescriptions = tableLabel => ({
+  pending: tableLabel
+    ? `Your order is in the queue. We'll bring it to ${tableLabel}.`
+    : 'Your order is in the queue. Sit tight!',
+  in_progress: 'The chef is working on your order now.',
+  ready: tableLabel
+    ? `Your order is on its way to ${tableLabel}!`
+    : 'Your order is ready — come and get it!',
+})
 const STATUS_EMOJI = { pending: '⏳', in_progress: '👨‍🍳', ready: '🎉' }
 
 export default function TrackOrder() {
   const { publicId } = useParams()
   const navigate = useNavigate()
+  const [searchParams] = useSearchParams()
+  const tableCode = searchParams.get('t')
   const { kitchenId, slug } = useKitchen()
   const [lookupId, setLookupId] = useState('')
   const [order, setOrder] = useState(null)
@@ -23,6 +37,8 @@ export default function TrackOrder() {
   const [error, setError] = useState('')
   const esRef = useRef(null)
   const prevStatusRef = useRef(null)
+  // Read inside the SSE handler, which closes over its creation-time scope.
+  const tableLabelRef = useRef(null)
 
   useEffect(() => {
     if (publicId) loadOrder(publicId)
@@ -37,6 +53,7 @@ export default function TrackOrder() {
       setOrder(data)
       setStatus(normalizedStatus)
       prevStatusRef.current = normalizedStatus
+      tableLabelRef.current = data.table_label || null
       setQueuePos(data.queue_position)
       if ('Notification' in window && window.isSecureContext && Notification.permission === 'default') {
         Notification.requestPermission()
@@ -61,7 +78,9 @@ export default function TrackOrder() {
           if (normalizedStatus === 'ready' && prevStatusRef.current !== 'ready') {
             if ('Notification' in window && window.isSecureContext && Notification.permission === 'granted') {
               new Notification('Your order is ready!', {
-                body: 'Come and collect your order!',
+                body: tableLabelRef.current
+                  ? `On its way to ${tableLabelRef.current}!`
+                  : 'Come and collect your order!',
               })
             }
           }
@@ -80,6 +99,12 @@ export default function TrackOrder() {
   }
 
   const currentStep = STATUS_STEPS.indexOf(status)
+  const tableLabel = order?.table_label || null
+  const labels = statusLabels(tableLabel)
+  const descriptions = statusDescriptions(tableLabel)
+  // Prefer the code from the URL over the order's label: the label is for
+  // display, the code is what /order needs to bind a new order to the table.
+  const orderMorePath = `${slug ? `/k/${slug}` : ''}/order${tableCode ? `?t=${encodeURIComponent(tableCode)}` : ''}`
 
   return (
     <div className="min-h-screen bg-brand-bg">
@@ -121,8 +146,11 @@ export default function TrackOrder() {
           <div>
             <div className="bg-brand-surface rounded-2xl shadow p-6 mb-6 text-center">
               <p className="text-5xl mb-3">{STATUS_EMOJI[status] || '📋'}</p>
+              {tableLabel && (
+                <p className="text-3xl font-extrabold text-brand-600 leading-tight mb-1">{tableLabel}</p>
+              )}
               <p className="text-2xl font-extrabold text-brand-text">{order.order_number}</p>
-              <p className="text-gray-500 text-lg">{order.customer_name}</p>
+              {!tableLabel && <p className="text-gray-500 text-lg">{order.customer_name}</p>}
             </div>
 
             {/* Progress bar */}
@@ -136,7 +164,7 @@ export default function TrackOrder() {
                       {i < currentStep ? '✓' : i + 1}
                     </div>
                     <p className={`text-xs text-center ${i <= currentStep ? 'text-brand-600 font-medium' : 'text-gray-400'}`}>
-                      {STATUS_LABELS[s]}
+                      {labels[s]}
                     </p>
                   </div>
                 ))}
@@ -149,7 +177,7 @@ export default function TrackOrder() {
                 />
               </div>
 
-              <p className="text-center text-gray-600 mt-2">{STATUS_DESCRIPTIONS[status]}</p>
+              <p className="text-center text-gray-600 mt-2">{descriptions[status]}</p>
 
               {queuePos && status === 'pending' && (
                 <p className="text-center text-brand-600 font-bold mt-2">
@@ -179,6 +207,13 @@ export default function TrackOrder() {
                 ))}
               </div>
             </div>
+
+            <Link
+              to={orderMorePath}
+              className="block text-center mt-6 bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-lg shadow transition-colors"
+            >
+              {tableLabel ? `Order more for ${tableLabel}` : 'Place another order'}
+            </Link>
           </div>
         )}
       </div>

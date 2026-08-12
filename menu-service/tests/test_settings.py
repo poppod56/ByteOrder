@@ -111,3 +111,26 @@ def test_matts_baps_dash0_kitchen_scenario(client, db):
     # test-kitchen sees only its own data
     res = client.get('/settings/kitchen_name')
     assert res.json()['value'] == 'Dash0 Kitchen'
+
+
+# ── frontend_url validation ───────────────────────────────────────────────────
+# The value is rendered as an href in admin and encoded into every QR code, so
+# only absolute http(s) origins may be stored.
+
+def test_frontend_url_accepts_http_and_https(client):
+    assert client.put("/settings/frontend_url", json={"value": "http://order.local"}).status_code == 200
+    assert client.put("/settings/frontend_url", json={"value": "https://order.example.com"}).status_code == 200
+
+
+def test_frontend_url_rejects_script_schemes(client):
+    for value in ("javascript:alert(1)", "data:text/html,<script>alert(1)</script>", "vbscript:msgbox"):
+        assert client.put("/settings/frontend_url", json={"value": value}).status_code == 400
+
+
+def test_frontend_url_rejects_a_bare_hostname(client):
+    assert client.put("/settings/frontend_url", json={"value": "order.example.com"}).status_code == 400
+
+
+def test_frontend_url_can_be_cleared(client):
+    client.put("/settings/frontend_url", json={"value": "https://order.example.com"})
+    assert client.put("/settings/frontend_url", json={"value": ""}).status_code == 200

@@ -45,6 +45,23 @@ def _validate_printer_url(url: str) -> None:
         pass  # Not an IP literal — hostname validation above is sufficient
 
 
+def _validate_frontend_url(url: str) -> None:
+    """Only absolute http(s) origins.
+
+    This value is rendered as an href in the admin panel and encoded into every
+    QR code, so a `javascript:` or `data:` scheme would become a live link.
+    """
+    try:
+        parsed = urlparse(url)
+    except Exception:
+        raise HTTPException(status_code=400, detail="frontend_url is not a valid URL")
+
+    if parsed.scheme not in ("http", "https"):
+        raise HTTPException(status_code=400, detail="frontend_url must start with http:// or https://")
+    if not parsed.hostname:
+        raise HTTPException(status_code=400, detail="frontend_url must include a hostname")
+
+
 @router.get("/", response_model=list[schemas.SettingOut])
 def list_settings(db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitchen_id)):
     return db.query(models.Setting).filter(models.Setting.kitchen_id == kitchen_id).all()
@@ -64,6 +81,8 @@ def upsert_setting(key: str, data: schemas.SettingIn, db: Session = Depends(get_
         raise HTTPException(status_code=400, detail=f"Unknown setting key: {key}")
     if key == "printer_url" and data.value:
         _validate_printer_url(data.value)
+    if key == "frontend_url" and data.value:
+        _validate_frontend_url(data.value)
     setting = db.query(models.Setting).filter(models.Setting.kitchen_id == kitchen_id, models.Setting.key == key).first()
     if setting:
         setting.value = data.value

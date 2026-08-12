@@ -10,10 +10,16 @@ export default function Home() {
   const [kitchenName, setKitchenName] = useState('ByteOrder Kitchen')
   const [logo, setLogo] = useState('')
   const [brandColor, setBrandColor] = useState('#ea580c')
+  const [frontendUrl, setFrontendUrl] = useState('')
   const esRef = useRef(null)
 
   const basePath = slug ? `/k/${slug}` : ''
-  const orderUrl = `${window.location.origin}${basePath}/order`
+  // The kiosk is often reached on a LAN address that customers' phones cannot
+  // resolve, so the QR has to encode the configured public URL rather than
+  // wherever this screen happens to be loaded from.
+  // Table QR codes are built the same way in admin's Tables page — keep both in step.
+  const baseUrl = frontendUrl.trim().replace(/\/+$/, '') || window.location.origin
+  const orderUrl = `${baseUrl}${basePath}/order`
 
   useEffect(() => {
     menuApi.get('/settings/kitchen_name').then(({ data }) => {
@@ -26,6 +32,10 @@ export default function Home() {
 
     menuApi.get('/settings/brand_primary').then(({ data }) => {
       if (data.value) setBrandColor(data.value)
+    }).catch(() => {})
+
+    menuApi.get('/settings/frontend_url').then(({ data }) => {
+      if (data.value) setFrontendUrl(data.value)
     }).catch(() => {})
 
     loadQueue()

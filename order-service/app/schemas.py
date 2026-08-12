@@ -23,8 +23,10 @@ class OrderItemIn(BaseModel):
 
 
 class OrderIn(BaseModel):
-    customer_name: str
+    # Optional when table_code is given — the table label is used as the name.
+    customer_name: str = ""
     items: list[OrderItemIn]
+    table_code: Optional[str] = None
 
 
 class OrderItemIngredientOut(BaseModel):
@@ -58,6 +60,8 @@ class OrderOut(BaseModel):
     status: str
     created_at: datetime
     updated_at: datetime
+    table_id: Optional[int] = None
+    table_label: Optional[str] = None
     items: list[OrderItemOut] = []
     queue_position: Optional[int] = None
     model_config = {"from_attributes": True}
@@ -65,6 +69,33 @@ class OrderOut(BaseModel):
 
 class OrderStatusUpdate(BaseModel):
     status: str
+
+
+class TableIn(BaseModel):
+    label: str
+    count: int = 1   # >1 creates label 1..N in one call; codes are always generated
+
+
+class TableUpdate(BaseModel):
+    label: Optional[str] = None
+    active: Optional[bool] = None
+
+
+class TableOut(BaseModel):
+    id: int
+    kitchen_id: str
+    code: str
+    label: str
+    active: bool
+    created_at: datetime
+    model_config = {"from_attributes": True}
+
+
+class TablePublicOut(BaseModel):
+    """Shape returned to unauthenticated customers resolving a QR code."""
+    code: str
+    label: str
+    model_config = {"from_attributes": True}
 
 
 class PrinterRegistration(BaseModel):

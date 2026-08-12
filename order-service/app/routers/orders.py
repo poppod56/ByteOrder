@@ -1,26 +1,39 @@
 import json
 import asyncio
+import logging
 from datetime import datetime
+
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from sqlalchemy import func
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from app import models, schemas
 from app.database import get_db, SessionLocal
 from app.redis_client import get_redis
 from app.auth import get_kitchen_id
+from app.timeutil import utcnow
+
+log = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 ACTIVE_STATUSES = ("pending", "in_progress", "ready")
 
+# Allocating an order number is read-then-insert, so simultaneous orders can pick
+# the same one. The unique constraint is the arbiter; the loser simply retries.
+MAX_ORDER_NUMBER_ATTEMPTS = 5
 
-def _next_order_number(db: Session) -> str:
-    today = datetime.utcnow().strftime("%Y%m%d")
+
+def _next_order_number(db: Session, kitchen_id: str) -> str:
+    today = utcnow().strftime("%Y%m%d")
     prefix = f"BO-{today}-"
     last = (
         db.query(models.Order)
-        .filter(models.Order.order_number.like(f"{prefix}%"))
+        .filter(
+            models.Order.kitchen_id == kitchen_id,
+            models.Order.order_number.like(f"{prefix}%"),
+        )
         .order_by(models.Order.id.desc())
         .first()
     )
@@ -43,12 +56,48 @@ def _queue_position(order: models.Order, db: Session) -> int | None:
     return ahead + 1
 
 
-@router.post("/", response_model=schemas.OrderOut, status_code=201)
-def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitchen_id)):
+def _resolve_table(table_code: str | None, kitchen_id: str, db: Session) -> models.Table | None:
+    """Look up the table for a scanned QR code, or None for a takeaway order.
+
+    An unknown code is rejected rather than silently dropped — a mis-printed QR
+    must fail loudly instead of producing orders the kitchen can't deliver.
+    """
+    if not table_code:
+        return None
+    table = db.query(models.Table).filter(
+        models.Table.kitchen_id == kitchen_id,
+        models.Table.code == table_code.strip().lower(),
+        models.Table.active.is_(True),
+    ).first()
+    if not table:
+        # Structured detail: the customer app has to tell this apart from the
+        # other 400s so it can explain that the QR was replaced, rather than
+        # telling the customer to retry something that can never succeed.
+        raise HTTPException(status_code=400, detail={
+            "code": "unknown_table",
+            "message": "Unknown table code",
+        })
+    return table
+
+
+def _persist_order(
+    data: schemas.OrderIn,
+    kitchen_id: str,
+    customer_name: str,
+    table_id: int | None,
+    table_label: str | None,
+    db: Session,
+) -> models.Order:
+    """Insert the order and its items under a freshly allocated order number.
+
+    Raises IntegrityError if a concurrent order claimed the same number first.
+    """
     order = models.Order(
-        order_number=_next_order_number(db),
-        customer_name=data.customer_name,
+        order_number=_next_order_number(db, kitchen_id),
+        customer_name=customer_name,
         kitchen_id=kitchen_id,
+        table_id=table_id,
+        table_label=table_label,
     )
     db.add(order)
     db.flush()
@@ -79,14 +128,50 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
 
     db.commit()
     db.refresh(order)
+    return order
+
+
+@router.post("/", response_model=schemas.OrderOut, status_code=201)
+def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitchen_id)):
+    table = _resolve_table(data.table_code, kitchen_id, db)
+
+    # With a table the name is optional — the label is what the kitchen serves by.
+    customer_name = data.customer_name.strip()
+    if not customer_name:
+        if not table:
+            raise HTTPException(status_code=400, detail="customer_name is required")
+        customer_name = table.label
+
+    # Read off the table before any rollback expires the instance.
+    table_id = table.id if table else None
+    table_label = table.label if table else None
+
+    for attempt in range(MAX_ORDER_NUMBER_ATTEMPTS):
+        try:
+            order = _persist_order(data, kitchen_id, customer_name, table_id, table_label, db)
+            break
+        except IntegrityError:
+            # Someone else took this number between our SELECT and INSERT. Start
+            # over — the retry re-reads and sees the row that beat us.
+            db.rollback()
+            log.warning(
+                "Order number collision for kitchen %s (attempt %d/%d)",
+                kitchen_id, attempt + 1, MAX_ORDER_NUMBER_ATTEMPTS,
+            )
+    else:
+        raise HTTPException(status_code=503, detail="Could not allocate an order number — please try again")
 
     # Publish to Redis for print-service and queue watchers
     redis = get_redis()
-    redis.publish("queue_updates", json.dumps({"order_id": order.id, "status": order.status}))
+    redis.publish(f"queue_updates:{kitchen_id}", json.dumps({"order_id": order.id, "status": order.status}))
+    # Ticket payload. Two independent formatters consume this — print-service's
+    # format_order() and pi-printer-client's _format_order() — so a field added
+    # here has to be rendered in both or the printer backends disagree.
     order_payload = json.dumps({
         "order_id": order.id,
         "order_number": order.order_number,
         "customer_name": order.customer_name,
+        "table_label": order.table_label,
         "kitchen_id": order.kitchen_id,
         "items": [
             {
@@ -129,11 +214,13 @@ def get_queue(db: Session = Depends(get_db), kitchen_id: str = Depends(get_kitch
 
 
 @router.get("/queue/stream")
-async def queue_stream():
+async def queue_stream(kitchen_id: str = Depends(get_kitchen_id)):
     async def event_generator():
         redis = get_redis()
         pubsub = redis.pubsub()
-        pubsub.subscribe("queue_updates")
+        # Scoped per kitchen: on a shared deployment an unscoped channel woke
+        # every kitchen's kiosk on every other kitchen's orders.
+        pubsub.subscribe(f"queue_updates:{kitchen_id}")
         try:
             while True:
                 message = pubsub.get_message(ignore_subscribe_messages=True, timeout=0)
@@ -159,7 +246,7 @@ def get_history(date: str | None = None, db: Session = Depends(get_db), kitchen_
             raise HTTPException(status_code=400, detail="Use YYYY-MM-DD") from e
         q = q.filter(func.date(models.Order.created_at) == d)
     else:
-        q = q.filter(func.date(models.Order.created_at) == datetime.utcnow().date())
+        q = q.filter(func.date(models.Order.created_at) == utcnow().date())
     return q.order_by(models.Order.created_at.desc()).all()
 
 
@@ -245,8 +332,8 @@ def update_status(order_id: int, data: schemas.OrderStatusUpdate, db: Session = 
         "order_number": order.order_number,
         "status": order.status,
     }))
-    # Also publish to global queue channel so home page updates
-    redis.publish("queue_updates", json.dumps({"order_id": order.id, "status": order.status}))
+    # Also publish to the kitchen's queue channel so its kiosk updates
+    redis.publish(f"queue_updates:{order.kitchen_id}", json.dumps({"order_id": order.id, "status": order.status}))
 
     out = schemas.OrderOut.model_validate(order)
     out.queue_position = _queue_position(order, db)

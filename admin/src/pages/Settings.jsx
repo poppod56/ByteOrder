@@ -8,6 +8,7 @@ export default function Settings() {
   const { organization } = useOrganization()
 
   const [printerUrl, setPrinterUrl] = useState('')
+  const [frontendUrl, setFrontendUrl] = useState('')
   const [kitchenName, setKitchenName] = useState('')
   const [logo, setLogo] = useState('')
   const [brandPrimary, setBrandPrimary] = useState('#ea580c')
@@ -25,6 +26,7 @@ export default function Settings() {
     api.get('/settings/').then(({ data }) => {
       const map = Object.fromEntries(data.map(s => [s.key, s.value || '']))
       setPrinterUrl(map.printer_url || '')
+      setFrontendUrl(map.frontend_url || '')
       if (map.kitchen_name) {
         setKitchenName(map.kitchen_name)
       } else if (organization?.name) {
@@ -100,6 +102,7 @@ export default function Settings() {
     try {
       await Promise.all([
         api.put('/settings/printer_url',   { value: printerUrl }),
+        api.put('/settings/frontend_url',  { value: frontendUrl.trim().replace(/\/+$/, '') }),
         api.put('/settings/kitchen_name',  { value: kitchenName }),
         api.put('/settings/logo',          { value: logo }),
         api.put('/settings/brand_primary', { value: brandPrimary }),
@@ -115,9 +118,11 @@ export default function Settings() {
     }
   }
 
-  const customerUrl = slug
-    ? `${window.location.origin.replace(/admin\./, '')}/k/${slug}`
-    : null
+  // Prefer the configured Frontend URL over guessing from the admin origin —
+  // this preview should show customers the same address their QR codes encode.
+  const customerBase = frontendUrl.trim().replace(/\/+$/, '')
+    || window.location.origin.replace(/(^https?:\/\/)admin\./, '$1')
+  const customerUrl = slug ? `${customerBase}/k/${slug}` : null
 
   return (
     <div className="max-w-lg space-y-8">
@@ -172,6 +177,20 @@ export default function Settings() {
             </p>
           )}
           <p className="text-xs text-gray-400 mt-1">Lowercase letters, numbers and hyphens only</p>
+        </div>
+
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">Frontend URL</label>
+          <input
+            value={frontendUrl}
+            onChange={e => setFrontendUrl(e.target.value)}
+            className="w-full border rounded-lg px-3 py-2 font-mono text-sm"
+            placeholder="https://order.my-kitchen.com"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Public address customers reach. Every QR code — the kiosk screen and printed table codes — is
+            built from this. Leave blank to guess from the address each screen is loaded on.
+          </p>
         </div>
 
         <div>

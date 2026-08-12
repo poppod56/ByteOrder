@@ -1,7 +1,7 @@
-from datetime import datetime
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import relationship
 from app.database import Base
+from app.timeutil import utcnow
 
 
 class Setting(Base):
@@ -9,7 +9,7 @@ class Setting(Base):
     kitchen_id = Column(String, primary_key=True, nullable=False)
     key = Column(String, primary_key=True, nullable=False)
     value = Column(Text, nullable=True)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
 
 
 class Category(Base):
@@ -87,4 +87,4 @@ class AdminUser(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String, unique=True, nullable=False)
     password_hash = Column(String, nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)

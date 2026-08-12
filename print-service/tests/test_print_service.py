@@ -130,6 +130,49 @@ def test_format_order_with_options():
     assert "Extra Sauce" in text
 
 
+def test_format_order_with_table_label():
+    order = {
+        "order_number": "BO-003",
+        "customer_name": "Dave",
+        "table_label": "Table 5",
+        "items": [{"name": "Burger", "ingredients": [], "options": []}],
+    }
+    with patch("app.main.get_kitchen_name", return_value="Kitchen"):
+        text = format_order(order, "k1")["text"]
+
+    assert "TABLE: Table 5" in text
+    # Staff read the table before the name, so it must come first on the ticket.
+    assert text.index("TABLE: Table 5") < text.index("Dave")
+
+
+def test_format_order_omits_table_line_for_takeaway():
+    order = {
+        "order_number": "BO-004",
+        "customer_name": "Erin",
+        "table_label": None,
+        "items": [{"name": "Burger", "ingredients": [], "options": []}],
+    }
+    with patch("app.main.get_kitchen_name", return_value="Kitchen"):
+        text = format_order(order, "k1")["text"]
+
+    assert "TABLE" not in text
+    assert "Erin" in text
+
+
+def test_format_order_without_table_key_at_all():
+    """Orders published before table support carry no table_label key."""
+    order = {
+        "order_number": "BO-005",
+        "customer_name": "Frank",
+        "items": [{"name": "Burger", "ingredients": [], "options": []}],
+    }
+    with patch("app.main.get_kitchen_name", return_value="Kitchen"):
+        text = format_order(order, "k1")["text"]
+
+    assert "TABLE" not in text
+    assert "Frank" in text
+
+
 # ── process_order ─────────────────────────────────────────────────────────────
 
 def test_process_order_invalid_json():
