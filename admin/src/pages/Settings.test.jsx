@@ -60,7 +60,7 @@ describe('Settings — customer URL preview', () => {
   it('builds the preview from Frontend URL so it matches what QR codes encode', async () => {
     mockSettings([{ key: 'frontend_url', value: 'https://order.example.com' }], 'matts-baps')
 
-    render(<Settings />)
+    render(<Settings authMode="cloud" />)
 
     await waitFor(() => {
       expect(screen.getByText('https://order.example.com/k/matts-baps')).toBeInTheDocument()
@@ -70,7 +70,7 @@ describe('Settings — customer URL preview', () => {
   it('falls back to the admin origin with the admin. prefix stripped', async () => {
     mockSettings([], 'matts-baps')
 
-    render(<Settings />)
+    render(<Settings authMode="cloud" />)
 
     await waitFor(() => {
       expect(screen.getByText(`${window.location.origin}/k/matts-baps`)).toBeInTheDocument()
@@ -89,7 +89,7 @@ describe('Settings — kitchen name pre-fill from Clerk', () => {
     useOrganization.mockReturnValue({ organization: { name: "Matt's Baps", slug: 'matts-baps' } })
     mockEmptySettings()
 
-    render(<Settings />)
+    render(<Settings authMode="cloud" />)
 
     await waitFor(() => {
       const input = screen.getByPlaceholderText('e.g. The Garden Kitchen')
@@ -101,7 +101,7 @@ describe('Settings — kitchen name pre-fill from Clerk', () => {
     useOrganization.mockReturnValue({ organization: { name: "Matt's Baps", slug: 'matts-baps' } })
     mockEmptySettings()
 
-    render(<Settings />)
+    render(<Settings authMode="cloud" />)
 
     await waitFor(() => {
       expect(screen.getByText(/Kitchen name pre-filled from your Clerk organization/i)).toBeInTheDocument()
@@ -112,7 +112,7 @@ describe('Settings — kitchen name pre-fill from Clerk', () => {
     useOrganization.mockReturnValue({ organization: { name: "Matt's Baps", slug: 'matts-baps' } })
     mockSettingsWithKitchenName('My Custom Kitchen')
 
-    render(<Settings />)
+    render(<Settings authMode="cloud" />)
 
     await waitFor(() => {
       const input = screen.getByPlaceholderText('e.g. The Garden Kitchen')
@@ -125,7 +125,7 @@ describe('Settings — kitchen name pre-fill from Clerk', () => {
     useOrganization.mockReturnValue({ organization: null })
     mockEmptySettings()
 
-    render(<Settings />)
+    render(<Settings authMode="cloud" />)
 
     await waitFor(() => {
       // API call completes — input stays empty
