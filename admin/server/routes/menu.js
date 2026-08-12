@@ -18,6 +18,12 @@ router.all('/{*path}', async (req, res) => {
   if (!kitchenId) {
     return res.status(403).json({ error: 'No organization selected' })
   }
+
+  // Item photos come back as image bytes. Forcing every response through
+  // res.json() turns them into a JSON string of the buffer, so the request has to
+  // be told to expect binary and the body passed straight through.
+  const wantsBinary = /\/items\/\d+\/image\/?$/.test(req.path) && req.method === 'GET'
+
   try {
     const response = await axios({
       method: req.method,
@@ -25,11 +31,31 @@ router.all('/{*path}', async (req, res) => {
       params: req.query,
       data: req.body,
       headers: { 'Content-Type': 'application/json', 'X-Kitchen-ID': kitchenId },
+      responseType: wantsBinary ? 'arraybuffer' : 'json',
     })
+
+    if (wantsBinary) {
+      const contentType = response.headers['content-type']
+      if (contentType) res.setHeader('Content-Type', contentType)
+      const cacheControl = response.headers['cache-control']
+      if (cacheControl) res.setHeader('Cache-Control', cacheControl)
+      return res.status(response.status).send(Buffer.from(response.data))
+    }
+
     res.status(response.status).json(response.data)
   } catch (err) {
     const status = err.response?.status || 500
-    res.status(status).json(err.response?.data || { error: 'Menu service error' })
+    // An arraybuffer error body is a Buffer, not an object — decode it before
+    // trying to pass it on, or the client gets an unreadable blob of bytes.
+    let body = err.response?.data
+    if (body && Buffer.isBuffer(body)) {
+      try {
+        body = JSON.parse(body.toString('utf8'))
+      } catch {
+        body = { error: 'Menu service error' }
+      }
+    }
+    res.status(status).json(body || { error: 'Menu service error' })
   }
 })
 

@@ -112,3 +112,69 @@ describe('GET /api/settings/* proxies to menu-service settings', () => {
     expect(callArg.url).toContain('/settings/kitchen_name')
   })
 })
+
+// ── Item images are binary, not JSON ─────────────────────────────────────────
+// res.json() would turn image bytes into a JSON string of the buffer, so the
+// image route has to ask axios for binary and pass the body straight through.
+
+describe('GET /api/menu/items/:id/image passes bytes through', () => {
+  const PNG = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAABzenr0AAAACklEQVR4nGMAAQAABQABDQottAAAAABJRU5ErkJggg==',
+    'base64',
+  )
+
+  it('returns the bytes with the upstream content type', async () => {
+    axios.mockResolvedValueOnce({
+      status: 200,
+      data: PNG,
+      headers: { 'content-type': 'image/png', 'cache-control': 'public, max-age=300' },
+    })
+
+    const res = await request(app)
+      .get('/api/menu/items/5/image')
+      .set('Authorization', `Bearer ${makeToken()}`)
+
+    expect(res.status).toBe(200)
+    expect(res.headers['content-type']).toBe('image/png')
+    expect(res.headers['cache-control']).toBe('public, max-age=300')
+    expect(Buffer.from(res.body)).toEqual(PNG)
+    expect(axios.mock.calls[0][0].responseType).toBe('arraybuffer')
+  })
+
+  it('keeps an error body readable even though the request wanted binary', async () => {
+    // axios hands back a Buffer for the error body too, which would reach the
+    // client as an unreadable blob if passed on as-is.
+    axios.mockRejectedValueOnce({
+      response: { status: 404, data: Buffer.from(JSON.stringify({ detail: 'No image for this item' })) },
+    })
+
+    const res = await request(app)
+      .get('/api/menu/items/5/image')
+      .set('Authorization', `Bearer ${makeToken()}`)
+
+    expect(res.status).toBe(404)
+    expect(res.body).toEqual({ detail: 'No image for this item' })
+  })
+
+  it('still asks for JSON on every other menu route', async () => {
+    axios.mockResolvedValueOnce({ status: 200, data: [{ id: 1 }] })
+
+    await request(app)
+      .get('/api/menu/items/')
+      .set('Authorization', `Bearer ${makeToken()}`)
+
+    expect(axios.mock.calls[0][0].responseType).toBe('json')
+  })
+
+  it('uploads an image as JSON, not binary', async () => {
+    axios.mockResolvedValueOnce({ status: 200, data: { id: 5, has_image: true } })
+
+    const res = await request(app)
+      .put('/api/menu/items/5/image')
+      .set('Authorization', `Bearer ${makeToken()}`)
+      .send({ data_url: 'data:image/png;base64,AAAA' })
+
+    expect(res.status).toBe(200)
+    expect(axios.mock.calls[0][0].responseType).toBe('json')
+  })
+})
