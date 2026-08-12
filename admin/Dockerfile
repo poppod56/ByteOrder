@@ -1,6 +1,8 @@
 FROM node:20-slim AS builder
 # Update npm to get patched bundled deps (tar, minimatch, glob, cross-spawn).
-RUN npm install -g npm@latest
+# Pinned to a major: npm@latest has moved to a release that requires Node >=22
+# and breaks the build on this base image.
+RUN npm install -g npm@11
 WORKDIR /app
 COPY package*.json ./
 RUN --mount=type=cache,target=/root/.npm,sharing=locked \
@@ -11,7 +13,9 @@ RUN npm run build && \
 
 FROM node:20-slim
 # Update npm to get patched bundled deps in the runtime image too.
-RUN npm install -g npm@latest
+# Pinned to a major: npm@latest has moved to a release that requires Node >=22
+# and breaks the build on this base image.
+RUN npm install -g npm@11
 WORKDIR /app
 ENV NODE_ENV=production
 COPY --from=builder /app/node_modules ./node_modules
