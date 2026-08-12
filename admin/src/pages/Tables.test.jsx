@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
-import { render, screen, waitFor } from '@testing-library/react'
+import { render, screen, waitFor, fireEvent } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import Tables from './Tables'
 
@@ -13,7 +13,10 @@ vi.mock('../lib/api', () => ({
 }))
 
 // qrcode.react renders fine in jsdom but the SVG is noise for these assertions.
-vi.mock('qrcode.react', () => ({ QRCodeSVG: () => null }))
+// Echo the props the sheet controls drive, so they can be asserted.
+vi.mock('qrcode.react', () => ({
+  QRCodeSVG: ({ value, fgColor }) => <div data-testid="qr" data-colour={fgColor} data-value={value} />,
+}))
 
 import api from '../lib/api'
 
@@ -197,5 +200,67 @@ describe('Tables — listing', () => {
     await waitFor(() => {
       expect(screen.getByText("Code 'table-1' is already in use")).toBeInTheDocument()
     })
+  })
+})
+
+describe('Tables — QR sheet controls', () => {
+  it('previews the sheet on screen, not only on paper', async () => {
+    mockApi({ settings: [{ key: 'frontend_url', value: 'https://order.example.com' }] })
+    render(<Tables />)
+
+    // One code per table, visible without opening the print dialog.
+    expect(await screen.findAllByTestId('qr')).toHaveLength(1)
+    expect(screen.getByText('QR sheet')).toBeInTheDocument()
+  })
+
+  it('sizes the code in millimetres so the preview matches the print', async () => {
+    mockApi()
+    render(<Tables />)
+    await screen.findAllByText('Table 1')
+
+    expect(document.getElementById('qr-1')).toHaveStyle({ width: '50mm' })
+
+    fireEvent.change(screen.getByLabelText(/Code size/i), { target: { value: '80' } })
+
+    expect(screen.getByLabelText(/Code size/i)).toHaveValue('80')
+    expect(document.getElementById('qr-1')).toHaveStyle({ width: '80mm' })
+  })
+
+  it('lays the sheet out with the chosen number per row', async () => {
+    mockApi()
+    render(<Tables />)
+    await screen.findAllByText('Table 1')
+
+    await userEvent.selectOptions(screen.getByLabelText('Per row'), '2')
+
+    expect(document.querySelector('.print-sheet')).toHaveStyle({
+      gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
+    })
+  })
+
+  it('follows the brand colour until one is picked', async () => {
+    mockApi({ settings: [{ key: 'brand_primary', value: '#123456' }] })
+    render(<Tables />)
+
+    await waitFor(() => {
+      expect(screen.getByTestId('qr')).toHaveAttribute('data-colour', '#123456')
+    })
+
+    fireEvent.change(screen.getByLabelText('Colour'), { target: { value: '#00aa00' } })
+    expect(screen.getByTestId('qr')).toHaveAttribute('data-colour', '#00aa00')
+
+    await userEvent.click(screen.getByRole('button', { name: /Use brand colour/i }))
+    expect(screen.getByTestId('qr')).toHaveAttribute('data-colour', '#123456')
+  })
+
+  it('can leave the URL off the printed sticker', async () => {
+    mockApi({ settings: [{ key: 'frontend_url', value: 'https://order.example.com' }] })
+    render(<Tables />)
+    const url = 'https://order.example.com/order?t=table-1'
+    expect(await screen.findAllByText(url)).toHaveLength(2)   // list + sheet
+
+    await userEvent.click(screen.getByLabelText(/under each code/i))
+
+    expect(screen.getAllByText(url)).toHaveLength(1)          // list only
   })
 })

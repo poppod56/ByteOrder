@@ -12,6 +12,12 @@ export default function Tables() {
   const [frontendUrl, setFrontendUrl] = useState('')
   const [slug, setSlug] = useState(null)
   const [brandColour, setBrandColour] = useState('#ea580c')
+  // Sheet layout. Size is in millimetres so what you see is what gets printed;
+  // the QR itself is rendered as SVG and scaled by CSS, so it stays crisp.
+  const [qrSizeMm, setQrSizeMm] = useState(50)
+  const [perRow, setPerRow] = useState(3)
+  const [qrColour, setQrColour] = useState(null)   // null = follow the brand colour
+  const [showUrl, setShowUrl] = useState(true)
 
   useEffect(() => {
     loadTables()
@@ -123,6 +129,24 @@ export default function Tables() {
   // actually holding the printer — not just the browser that rotated the code.
   const unprinted = tables.filter(t => !t.code_printed_at)
 
+  const sheetColour = qrColour ?? brandColour
+
+  function downloadQr(table) {
+    const svg = document.getElementById(`qr-${table.id}`)?.closest('div')?.querySelector('svg')
+    if (!svg) return
+    const blob = new Blob(
+      ['<?xml version="1.0" encoding="UTF-8"?>\n', new XMLSerializer().serializeToString(svg)],
+      { type: 'image/svg+xml' },
+    )
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    // Slugified label so a replacement sticker is easy to find on disk later.
+    a.download = `qr-${table.label.replace(/[^a-zA-Z0-9]+/g, '-').toLowerCase()}.svg`
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
   return (
     <div className="space-y-8">
       {/* Print styles: hide the app shell and keep each QR card whole. */}
@@ -130,12 +154,12 @@ export default function Tables() {
         @media print {
           body { background: #fff; }
           .no-print, nav, header, aside { display: none !important; }
-          .print-sheet { display: grid !important; grid-template-columns: repeat(3, 1fr); gap: 12mm; }
-          .print-card { break-inside: avoid; page-break-inside: avoid; border: 1px solid #ddd; }
+          .print-sheet { gap: 10mm; }
+          .print-card { break-inside: avoid; page-break-inside: avoid; }
         }
       `}</style>
 
-      <div className="no-print space-y-8 max-w-2xl">
+      <div className="no-print space-y-8 max-w-3xl">
         <h1 className="text-2xl font-bold text-brand-text">Tables</h1>
 
         {success && <p className="text-green-600 text-sm">{success}</p>}
@@ -186,15 +210,81 @@ export default function Tables() {
             </div>
           )}
 
-          {tables.length > 0 && (
+        </div>
+
+        {tables.length > 0 && (
+          <div className="bg-brand-surface rounded-xl shadow p-6 space-y-4">
+            <h2 className="text-lg font-semibold text-gray-800">QR sheet</h2>
+            <p className="text-sm text-gray-500">
+              This is exactly what prints. Sizes are in millimetres, so measure one against a table
+              before running off the whole set.
+            </p>
+
+            <div className="flex flex-wrap gap-6">
+              <div>
+                <label htmlFor="qr-size" className="block text-sm font-medium text-gray-700 mb-1">
+                  Code size — {qrSizeMm} mm
+                </label>
+                <input
+                  id="qr-size"
+                  type="range"
+                  min={20}
+                  max={120}
+                  step={5}
+                  value={qrSizeMm}
+                  onChange={e => setQrSizeMm(Number(e.target.value))}
+                  className="w-48"
+                />
+              </div>
+
+              <div>
+                <label htmlFor="qr-per-row" className="block text-sm font-medium text-gray-700 mb-1">Per row</label>
+                <select
+                  id="qr-per-row"
+                  value={perRow}
+                  onChange={e => setPerRow(Number(e.target.value))}
+                  className="border rounded-lg px-3 py-2"
+                >
+                  {[1, 2, 3, 4].map(n => <option key={n} value={n}>{n}</option>)}
+                </select>
+              </div>
+
+              <div>
+                <label htmlFor="qr-colour" className="block text-sm font-medium text-gray-700 mb-1">Colour</label>
+                <div className="flex items-center gap-2">
+                  <input
+                    id="qr-colour"
+                    type="color"
+                    value={sheetColour}
+                    onChange={e => setQrColour(e.target.value)}
+                    className="h-10 w-14 rounded border cursor-pointer p-0.5"
+                  />
+                  {qrColour && (
+                    <button onClick={() => setQrColour(null)} className="text-xs text-gray-400 hover:text-gray-700 underline">
+                      Use brand colour
+                    </button>
+                  )}
+                </div>
+                <p className="text-xs text-gray-400 mt-1">Dark colours scan more reliably</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Show URL</label>
+                <label className="inline-flex items-center gap-2 text-sm text-gray-600">
+                  <input type="checkbox" checked={showUrl} onChange={e => setShowUrl(e.target.checked)} />
+                  under each code
+                </label>
+              </div>
+            </div>
+
             <button
               onClick={handlePrint}
               className="bg-brand-600 hover:bg-brand-700 text-white font-medium rounded-lg px-6 py-2"
             >
               Print QR sheet
             </button>
-          )}
-        </div>
+          </div>
+        )}
 
         <form onSubmit={handleCreate} className="bg-brand-surface rounded-xl shadow p-6 space-y-4">
           <h2 className="text-lg font-semibold text-gray-800">Add Tables</h2>
@@ -237,14 +327,36 @@ export default function Tables() {
         </form>
       </div>
 
-      {/* Printable sheet — hidden on screen, laid out as a grid on paper. */}
+      {/* The sheet itself — on screen it is the preview, on paper it is the output. */}
       {tables.length > 0 && (
-        <div className="print-sheet hidden">
+        <div
+          className="print-sheet grid gap-6 justify-items-center"
+          style={{ gridTemplateColumns: `repeat(${perRow}, minmax(0, 1fr))` }}
+        >
           {tables.map(t => (
-            <div key={t.id} className="print-card flex flex-col items-center justify-center p-4 text-center">
-              <QRCodeSVG value={tableUrl(t.code)} size={160} fgColor={brandColour} />
+            <div
+              key={t.id}
+              className="print-card flex flex-col items-center justify-start p-4 text-center border border-gray-200 rounded-lg bg-white w-full"
+            >
+              {/* Rendered large and scaled by CSS so millimetre sizing stays sharp. */}
+              <div id={`qr-${t.id}`} style={{ width: `${qrSizeMm}mm`, maxWidth: '100%' }}>
+                <QRCodeSVG
+                  value={tableUrl(t.code)}
+                  size={512}
+                  fgColor={sheetColour}
+                  style={{ width: '100%', height: 'auto', display: 'block' }}
+                />
+              </div>
               <p className="mt-3 text-lg font-bold">{t.label}</p>
-              <p className="text-[10px] text-gray-400 font-mono break-all">{tableUrl(t.code)}</p>
+              {showUrl && (
+                <p className="text-[10px] text-gray-400 font-mono break-all">{tableUrl(t.code)}</p>
+              )}
+              <button
+                onClick={() => downloadQr(t)}
+                className="no-print mt-2 text-xs text-gray-400 hover:text-gray-700 underline"
+              >
+                Download SVG
+              </button>
             </div>
           ))}
         </div>
