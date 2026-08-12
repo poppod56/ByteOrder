@@ -12,6 +12,9 @@ venv/
 env/
 .env
 *.env
+*.db
+*.sqlite
+*.sqlite3
 
 # Node
 node_modules/
