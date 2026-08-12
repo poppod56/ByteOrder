@@ -15,6 +15,13 @@ BLE_PRINT_URL = "http://localhost:8080/print"
 RECONNECT_DELAY = 5  # seconds between SSE reconnect attempts
 
 
+def _money(minor, currency: str) -> str:
+    """Minor units to a printable amount; prices are stored as integers."""
+    if minor is None:
+        return ""
+    return f"{minor / 100:,.2f} {currency}"
+
+
 def _format_order(order: dict) -> str:
     """Convert an order dict to a plain-text receipt string.
 
@@ -39,12 +46,15 @@ def _format_order(order: dict) -> str:
     if customer:
         lines.append(f"Customer: {customer}")
 
+    currency = order.get("currency") or "THB"
+
     items = order.get("items") or []
     for item in items:
         name = item.get("name", "?")
         qty = item.get("quantity", 1)
         notes = item.get("notes") or ""
-        lines.append(f"  {qty}x {name}")
+        unit = item.get("unit_price")
+        lines.append(f"  {qty}x {name}" + (f"   {_money(unit, currency)} ea" if unit is not None else ""))
         if notes:
             lines.append(f"     * {notes}")
 
@@ -53,6 +63,9 @@ def _format_order(order: dict) -> str:
         excluded = [i["name"] for i in ingredients if not i.get("included")]
         if included:
             lines.append(f"     With: {', '.join(included)}")
+        for i in ingredients:
+            if i.get("included") and i.get("price_delta"):
+                lines.append(f"       + {i['name']}  {_money(i['price_delta'], currency)}")
         if excluded:
             lines.append(f"     NO:   {', '.join(excluded)}")
 
@@ -61,10 +74,17 @@ def _format_order(order: dict) -> str:
             options_by_group.setdefault(opt.get("group", ""), []).append(opt["name"])
         for group, opts in options_by_group.items():
             lines.append(f"     {group}: {', '.join(opts)}")
+        for opt in item.get("options") or []:
+            if opt.get("price_delta"):
+                lines.append(f"       + {opt['name']}  {_money(opt['price_delta'], currency)}")
 
     if order.get("notes"):
         lines.append("")
         lines.append(f"Note: {order['notes']}")
+
+    if order.get("total") is not None:
+        lines.append("-" * 32)
+        lines.append(f"TOTAL: {_money(order['total'], currency)}")
 
     lines.append("=" * 32)
     lines.append("")

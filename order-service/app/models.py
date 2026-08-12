@@ -45,6 +45,9 @@ class Order(Base):
     table_id = Column(Integer, ForeignKey("tables.id"), nullable=True)
     # Denormalised so renaming or deleting a table never rewrites order history.
     table_label = Column(String, nullable=True)
+    # Minor units, snapshotted at order time. NULL when the menu carried no
+    # prices — the kitchen is then simply not using the pricing feature.
+    total = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
@@ -56,6 +59,11 @@ class OrderItem(Base):
     order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
     menu_item_id = Column(Integer, nullable=False)
     menu_item_name = Column(String, nullable=False)
+    quantity = Column(Integer, nullable=False, default=1)
+    # Price of one of the dish when the order was placed, so later menu changes
+    # never rewrite an old bill. Modifier charges live on the rows below and are
+    # also per unit.
+    unit_price = Column(Integer, nullable=True)
     order = relationship("Order", back_populates="items")
     ingredients = relationship("OrderItemIngredient", back_populates="order_item", cascade="all, delete-orphan")
     options = relationship("OrderItemOption", back_populates="order_item", cascade="all, delete-orphan")
@@ -68,6 +76,7 @@ class OrderItemIngredient(Base):
     ingredient_id = Column(Integer, nullable=False)
     ingredient_name = Column(String, nullable=False)
     included = Column(Boolean, default=True)
+    price_delta = Column(Integer, nullable=False, default=0)
     order_item = relationship("OrderItem", back_populates="ingredients")
 
 
@@ -78,6 +87,7 @@ class OrderItemOption(Base):
     option_id = Column(Integer, nullable=False)
     option_name = Column(String, nullable=False)
     group_name = Column(String, nullable=False)
+    price_delta = Column(Integer, nullable=False, default=0)
     order_item = relationship("OrderItem", back_populates="options")
 
 

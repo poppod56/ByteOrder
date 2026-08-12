@@ -9,7 +9,7 @@ from app.auth import get_kitchen_id
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-ALLOWED_KEYS = {"printer_url", "kitchen_name", "frontend_url", "logo", "brand_primary", "brand_bg", "brand_surface", "brand_text"}
+ALLOWED_KEYS = {"printer_url", "kitchen_name", "frontend_url", "logo", "brand_primary", "brand_bg", "brand_surface", "brand_text", "currency"}
 
 # Hosts that must never be used as printer targets (internal service names + metadata endpoints)
 _BLOCKED_PRINTER_HOSTS = {

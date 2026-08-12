@@ -1,11 +1,15 @@
 import { useState, useEffect } from 'react'
 import api from '../lib/api'
+import ItemImageField from '../components/menu/ItemImageField'
+import PriceField from '../components/menu/PriceField'
+import { formatMoney, parseMoney } from '../lib/money'
 
-function OptionGroupsPanel({ itemId, groups, onAdd, onDelete, onAddOption, onDeleteOption }) {
+function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOption, onDeleteOption }) {
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupRequired, setNewGroupRequired] = useState(false)
   const [newGroupMax, setNewGroupMax] = useState(1)
   const [newOptionName, setNewOptionName] = useState({}) // { [groupId]: string }
+  const [newOptionPrice, setNewOptionPrice] = useState({}) // { [groupId]: string }
 
   function handleAddGroup(e) {
     e.preventDefault()
@@ -20,8 +24,9 @@ function OptionGroupsPanel({ itemId, groups, onAdd, onDelete, onAddOption, onDel
     e.preventDefault()
     const name = newOptionName[groupId]?.trim()
     if (!name) return
-    onAddOption(itemId, groupId, name)
+    onAddOption(itemId, groupId, name, parseMoney(newOptionPrice[groupId] || ''))
     setNewOptionName(prev => ({ ...prev, [groupId]: '' }))
+    setNewOptionPrice(prev => ({ ...prev, [groupId]: '' }))
   }
 
   return (
@@ -47,6 +52,11 @@ function OptionGroupsPanel({ itemId, groups, onAdd, onDelete, onAddOption, onDel
             {group.options?.map(opt => (
               <span key={opt.id} className="inline-flex items-center gap-1 text-xs bg-white border rounded-full px-2 py-0.5">
                 {opt.name}
+                {opt.price_delta ? (
+                  <span className="text-brand-600 font-semibold">
+                    +{formatMoney(opt.price_delta, currency)}
+                  </span>
+                ) : null}
                 <button
                   onClick={() => onDeleteOption(itemId, group.id, opt.id)}
                   className="text-gray-400 hover:text-red-500 leading-none"
@@ -63,6 +73,14 @@ function OptionGroupsPanel({ itemId, groups, onAdd, onDelete, onAddOption, onDel
               onChange={e => setNewOptionName(prev => ({ ...prev, [group.id]: e.target.value }))}
               placeholder="New option"
               className="flex-1 min-w-0 border rounded px-2 py-1 text-xs"
+            />
+            <input
+              value={newOptionPrice[group.id] || ''}
+              onChange={e => setNewOptionPrice(prev => ({ ...prev, [group.id]: e.target.value }))}
+              placeholder={`+ ${currency}`}
+              inputMode="decimal"
+              aria-label={`Extra charge for a new ${group.name} option`}
+              className="w-20 border rounded px-2 py-1 text-xs text-right"
             />
             <button type="submit" className="bg-brand-600 text-white rounded px-2 py-1 text-xs">+</button>
           </form>
@@ -111,6 +129,8 @@ export default function MenuManagement() {
   const [newItemName, setNewItemName] = useState('')
   const [newItemDesc, setNewItemDesc] = useState('')
   const [expandedOptions, setExpandedOptions] = useState(new Set()) // item IDs with section open
+  const [newItemPrice, setNewItemPrice] = useState('')
+  const [currency, setCurrency] = useState('THB')
   const [itemOptions, setItemOptions] = useState({})  // { [itemId]: [OptionGroupOut] }
 
   async function load() {
@@ -126,7 +146,12 @@ export default function MenuManagement() {
     }
   }
 
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    api.get('/settings/currency')
+      .then(({ data }) => { if (data.value) setCurrency(data.value) })
+      .catch(() => {})
+  }, [])
 
   async function addCategory() {
     if (!newCatName.trim()) return
@@ -147,10 +172,36 @@ export default function MenuManagement() {
       name: newItemName,
       description: newItemDesc,
       sort_order: selected.items?.length || 0,
+      price: parseMoney(newItemPrice),
     })
     setNewItemName('')
     setNewItemDesc('')
+    setNewItemPrice('')
     load()
+  }
+
+  // PUT replaces the whole item, so the rest of it is sent back unchanged.
+  async function saveItemPrice(item, price) {
+    await api.put(`/menu/items/${item.id}`, {
+      category_id: item.category_id,
+      name: item.name,
+      description: item.description,
+      active: item.active,
+      sort_order: item.sort_order,
+      price,
+    })
+    await load()
+  }
+
+  // There is no PATCH for a linked topping, so the link is replaced.
+  async function saveToppingPrice(item, linked, priceDelta) {
+    await api.delete(`/menu/items/${item.id}/ingredients/${linked.ingredient.id}`)
+    await api.post(`/menu/items/${item.id}/ingredients`, {
+      ingredient_id: linked.ingredient.id,
+      is_default: linked.is_default,
+      price_delta: priceDelta ?? 0,
+    })
+    await load()
   }
 
   async function toggleItem(item) {
@@ -207,8 +258,11 @@ export default function MenuManagement() {
     loadOptionGroups(itemId)
   }
 
-  async function addOption(itemId, groupId, name) {
-    await api.post(`/menu/items/${itemId}/option-groups/${groupId}/options`, { name })
+  async function addOption(itemId, groupId, name, priceDelta) {
+    await api.post(`/menu/items/${itemId}/option-groups/${groupId}/options`, {
+      name,
+      price_delta: priceDelta ?? 0,
+    })
     loadOptionGroups(itemId)
   }
 
@@ -270,6 +324,11 @@ export default function MenuManagement() {
                       <span className={`font-medium ${!item.active ? 'line-through text-gray-400' : ''}`}>
                         {item.name}
                       </span>
+                      {item.price !== null && item.price !== undefined && (
+                        <span className="ml-2 text-sm font-semibold text-brand-600">
+                          {formatMoney(item.price, currency)}
+                        </span>
+                      )}
                       {item.description && (
                         <p className="text-xs text-gray-500">{item.description}</p>
                       )}
@@ -282,6 +341,16 @@ export default function MenuManagement() {
                         Delete
                       </button>
                     </div>
+                  </div>
+
+                  <div className="flex flex-wrap items-start gap-6 mb-3 pb-3 border-b">
+                    <ItemImageField item={item} onChanged={load} />
+                    <PriceField
+                      value={item.price}
+                      currency={currency}
+                      onSave={price => saveItemPrice(item, price)}
+                      hint="Leave blank for no price"
+                    />
                   </div>
 
                   <div>
@@ -309,6 +378,23 @@ export default function MenuManagement() {
                     <p className="text-xs text-gray-400">
                       Gray = not added · <span className="text-brand-600">Outlined</span> = optional topping · <span className="text-brand-600 font-semibold">Filled</span> = pre-selected
                     </p>
+
+                    {/* Charged per unit and only when the topping is actually on
+                        the dish, so a pre-selected one is included in the price
+                        the customer already sees. */}
+                    {item.item_ingredients?.length > 0 && (
+                      <div className="mt-3 flex flex-wrap gap-4">
+                        {item.item_ingredients.map(linked => (
+                          <PriceField
+                            key={linked.ingredient.id}
+                            label={`+ ${linked.ingredient.name}`}
+                            value={linked.price_delta || null}
+                            currency={currency}
+                            onSave={delta => saveToppingPrice(item, linked, delta)}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
 
                   <div className="mt-3 border-t pt-3">
@@ -322,6 +408,7 @@ export default function MenuManagement() {
                       <OptionGroupsPanel
                         itemId={item.id}
                         groups={itemOptions[item.id] || []}
+                        currency={currency}
                         onAdd={addOptionGroup}
                         onDelete={deleteOptionGroup}
                         onAddOption={addOption}
@@ -347,6 +434,14 @@ export default function MenuManagement() {
                   onChange={e => setNewItemDesc(e.target.value)}
                   placeholder="Description (optional)"
                   className="flex-1 border rounded px-3 py-2 text-sm"
+                />
+                <input
+                  value={newItemPrice}
+                  onChange={e => setNewItemPrice(e.target.value)}
+                  placeholder={`Price (${currency})`}
+                  inputMode="decimal"
+                  aria-label="Price"
+                  className="w-32 border rounded px-3 py-2 text-sm text-right"
                 />
                 <button
                   onClick={addItem}

@@ -52,21 +52,25 @@ class IngredientIn(BaseModel):
 class MenuItemIngredientOut(BaseModel):
     ingredient: IngredientOut
     is_default: bool
+    price_delta: int = 0
     model_config = {"from_attributes": True}
 
 class MenuItemIngredientIn(BaseModel):
     ingredient_id: int
     is_default: bool = True
+    price_delta: int = 0
 
 
 # Options
 class OptionOut(BaseModel):
     id: int
     name: str
+    price_delta: int = 0
     model_config = {"from_attributes": True}
 
 class OptionIn(BaseModel):
     name: str
+    price_delta: int = 0
 
 
 # Option groups
@@ -94,9 +98,14 @@ class MenuItemOut(BaseModel):
     description: Optional[str]
     active: bool
     sort_order: int
+    price: Optional[int] = None
+    # The image itself is fetched from /items/{id}/image; only its presence is
+    # reported here so the menu list stays small.
+    has_image: bool = False
     item_ingredients: list[MenuItemIngredientOut] = []
     option_groups: list[OptionGroupOut] = []
     model_config = {"from_attributes": True}
+
 
 class MenuItemIn(BaseModel):
     category_id: int
@@ -104,6 +113,12 @@ class MenuItemIn(BaseModel):
     description: Optional[str] = None
     active: bool = True
     sort_order: int = 0
+    price: Optional[int] = None
+
+
+class MenuItemImageIn(BaseModel):
+    # Data URI as produced by FileReader.readAsDataURL in the admin panel.
+    data_url: str
 
 
 # Categories

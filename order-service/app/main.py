@@ -86,6 +86,14 @@ def _run_migrations():
         # earlier build of this branch — create_all only creates missing tables,
         # it never alters an existing one.
         conn.execute(text("ALTER TABLE tables ADD COLUMN IF NOT EXISTS code_printed_at TIMESTAMP"))
+        # Price snapshots. Nullable/defaulted so existing orders need no back-fill;
+        # an order placed before pricing existed simply has no total.
+        conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS total INTEGER"))
+        conn.execute(text("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS unit_price INTEGER"))
+        # Existing lines were one unit each, which is exactly what the default gives.
+        conn.execute(text("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"))
+        conn.execute(text("ALTER TABLE order_item_ingredients ADD COLUMN IF NOT EXISTS price_delta INTEGER NOT NULL DEFAULT 0"))
+        conn.execute(text("ALTER TABLE order_item_options ADD COLUMN IF NOT EXISTS price_delta INTEGER NOT NULL DEFAULT 0"))
         # A duplicate label makes the printed ticket ambiguous, so the column is
         # unique — but earlier builds allowed duplicates, so any existing ones are
         # suffixed first rather than letting the constraint fail startup.

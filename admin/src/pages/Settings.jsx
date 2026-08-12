@@ -23,6 +23,7 @@ function SettingsWithClerkOrg() {
 function SettingsForm({ organization }) {
   const [printerUrl, setPrinterUrl] = useState('')
   const [frontendUrl, setFrontendUrl] = useState('')
+  const [currency, setCurrency] = useState('THB')
   const [kitchenName, setKitchenName] = useState('')
   const [logo, setLogo] = useState('')
   const [brandPrimary, setBrandPrimary] = useState('#ea580c')
@@ -41,6 +42,7 @@ function SettingsForm({ organization }) {
       const map = Object.fromEntries(data.map(s => [s.key, s.value || '']))
       setPrinterUrl(map.printer_url || '')
       setFrontendUrl(map.frontend_url || '')
+      setCurrency(map.currency || 'THB')
       if (map.kitchen_name) {
         setKitchenName(map.kitchen_name)
       } else if (organization?.name) {
@@ -117,6 +119,7 @@ function SettingsForm({ organization }) {
       await Promise.all([
         api.put('/settings/printer_url',   { value: printerUrl }),
         api.put('/settings/frontend_url',  { value: frontendUrl.trim().replace(/\/+$/, '') }),
+        api.put('/settings/currency',      { value: currency.trim().toUpperCase() }),
         api.put('/settings/kitchen_name',  { value: kitchenName }),
         api.put('/settings/logo',          { value: logo }),
         api.put('/settings/brand_primary', { value: brandPrimary }),
@@ -204,6 +207,22 @@ function SettingsForm({ organization }) {
           <p className="text-xs text-gray-400 mt-1">
             Public address customers reach. Every QR code — the kiosk screen and printed table codes — is
             built from this. Leave blank to guess from the address each screen is loaded on.
+          </p>
+        </div>
+
+        <div>
+          <label htmlFor="currency" className="block text-sm font-medium text-gray-700 mb-1">Currency</label>
+          <input
+            id="currency"
+            value={currency}
+            onChange={e => setCurrency(e.target.value)}
+            maxLength={3}
+            className="w-24 border rounded-lg px-3 py-2 font-mono text-sm uppercase"
+            placeholder="THB"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Three-letter code used to show every price — THB, GBP, USD. Prices themselves are
+            entered on the Menu page.
           </p>
         </div>
 

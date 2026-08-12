@@ -12,6 +12,7 @@ from app import models, schemas
 from app.database import get_db, SessionLocal
 from app.redis_client import get_redis
 from app.auth import get_kitchen_id
+from app.pricing import load_currency, load_prices, line_total
 from app.timeutil import utcnow
 
 log = logging.getLogger(__name__)
@@ -109,6 +110,8 @@ def _persist_order(
 
     Raises IntegrityError if a concurrent order claimed the same number first.
     """
+    prices = load_prices(data, kitchen_id, db)
+
     order = models.Order(
         order_number=_next_order_number(db, kitchen_id),
         customer_name=customer_name,
@@ -119,29 +122,49 @@ def _persist_order(
     db.add(order)
     db.flush()
 
+    order_total = 0
     for item_data in data.items:
+        unit_price = prices.item_price(item_data.menu_item_id)
         item = models.OrderItem(
             order_id=order.id,
             menu_item_id=item_data.menu_item_id,
             menu_item_name=item_data.menu_item_name,
+            quantity=item_data.quantity,
+            unit_price=unit_price,
         )
         db.add(item)
         db.flush()
 
+        charged_deltas = []
         for ing in item_data.ingredients:
+            # Only a topping actually on the dish is charged for.
+            delta = prices.ingredient_delta(item_data.menu_item_id, ing.ingredient_id) if ing.included else 0
+            if ing.included:
+                charged_deltas.append(delta)
             db.add(models.OrderItemIngredient(
                 order_item_id=item.id,
                 ingredient_id=ing.ingredient_id,
                 ingredient_name=ing.ingredient_name,
                 included=ing.included,
+                price_delta=delta,
             ))
+        option_deltas = []
         for opt in item_data.options:
+            delta = prices.option_delta(opt.option_id)
+            option_deltas.append(delta)
             db.add(models.OrderItemOption(
                 order_item_id=item.id,
                 option_id=opt.option_id,
                 option_name=opt.option_name,
                 group_name=opt.group_name,
+                price_delta=delta,
             ))
+
+        line = line_total(unit_price, charged_deltas, option_deltas, item_data.quantity)
+        if line is not None:
+            order_total += line
+
+    order.total = order_total if prices.priced else None
 
     db.commit()
     db.refresh(order)
@@ -193,15 +216,19 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
         "customer_name": order.customer_name,
         "table_label": order.table_label,
         "kitchen_id": order.kitchen_id,
+        "total": order.total,
+        "currency": load_currency(kitchen_id, db),
         "items": [
             {
                 "name": oi.menu_item_name,
+                "quantity": oi.quantity,
+                "unit_price": oi.unit_price,
                 "ingredients": [
-                    {"name": i.ingredient_name, "included": i.included}
+                    {"name": i.ingredient_name, "included": i.included, "price_delta": i.price_delta}
                     for i in oi.ingredients
                 ],
                 "options": [
-                    {"group": o.group_name, "name": o.option_name}
+                    {"group": o.group_name, "name": o.option_name, "price_delta": o.price_delta}
                     for o in oi.options
                 ],
             }
@@ -268,6 +295,48 @@ def get_history(date: str | None = None, db: Session = Depends(get_db), kitchen_
     else:
         q = q.filter(func.date(models.Order.created_at) == utcnow().date())
     return q.order_by(models.Order.created_at.desc()).all()
+
+
+@router.get("/by-table/{code}", response_model=list[schemas.OrderOut])
+def get_orders_for_table(
+    code: str,
+    db: Session = Depends(get_db),
+    kitchen_id: str = Depends(get_kitchen_id),
+):
+    """Today's orders for one table, for the customer app's "already ordered" list.
+
+    Keyed off the table's QR code rather than anything held in the browser, so the
+    list survives a reload, a flat battery or a second phone — and everyone sitting
+    at the table sees the same orders, which is the point of a shared table.
+
+    Scoped to today so a table does not accumulate last week's history, and
+    deliberately not filtered to active statuses: a customer should still see the
+    order they just collected.
+    """
+    table = db.query(models.Table).filter(
+        models.Table.kitchen_id == kitchen_id,
+        models.Table.code == code.strip().lower(),
+        models.Table.active.is_(True),
+    ).first()
+    if not table:
+        raise HTTPException(status_code=404, detail="Table not found")
+
+    orders = (
+        db.query(models.Order)
+        .filter(
+            models.Order.kitchen_id == kitchen_id,
+            models.Order.table_id == table.id,
+            func.date(models.Order.created_at) == utcnow().date(),
+        )
+        .order_by(models.Order.created_at.desc())
+        .all()
+    )
+    results = []
+    for order in orders:
+        out = schemas.OrderOut.model_validate(order)
+        out.queue_position = _queue_position(order, db)
+        results.append(out)
+    return results
 
 
 @router.get("/track/{public_id}", response_model=schemas.OrderOut)
