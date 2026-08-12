@@ -18,8 +18,27 @@ const CATEGORIES = [{
   id: 1,
   name: 'Burgers',
   description: '',
-  items: [{ id: 10, name: 'Cheeseburger', description: '', item_ingredients: [] }],
+  items: [{ id: 10, name: 'Cheeseburger', description: '', item_ingredients: [], option_groups: [] }],
 }]
+
+function withOptionGroups(groups) {
+  return [{ ...CATEGORIES[0], items: [{ ...CATEGORIES[0].items[0], option_groups: groups }] }]
+}
+
+const SIZE_REQUIRED = {
+  id: 1, name: 'Size', required: true, min_select: 0, max_select: 1,
+  options: [{ id: 100, name: 'Regular' }, { id: 101, name: 'Large' }],
+}
+const EXTRAS_UP_TO_TWO = {
+  id: 2, name: 'Extras', required: false, min_select: 0, max_select: 2,
+  options: [{ id: 200, name: 'Egg' }, { id: 201, name: 'Bacon' }, { id: 202, name: 'Avocado' }],
+}
+
+async function reachCustomise() {
+  await screen.findByText(/What are you having\?/i)
+  await userEvent.click(screen.getByText('Burgers'))
+  await userEvent.click(screen.getByText('Cheeseburger'))
+}
 
 const menuApi = { get: vi.fn() }
 const orderApi = { get: vi.fn(), post: vi.fn() }
@@ -166,5 +185,105 @@ describe('Order page — scanned from a table QR', () => {
     // Nothing submitted yet, but the failed code must not be retained for later.
     await waitFor(() => expect(orderApi.post).not.toHaveBeenCalled())
     expect(screen.queryByText('Table 3')).toBeNull()
+  })
+})
+
+describe('Order page — option groups', () => {
+  it('asks for the choices the kitchen configured', async () => {
+    menuApi.get.mockImplementation(path =>
+      path === '/categories/'
+        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED]) })
+        : Promise.resolve({ data: { value: null } })
+    )
+    renderOrder('/order?t=t3')
+    await reachCustomise()
+
+    expect(screen.getByText('Size')).toBeInTheDocument()
+    expect(screen.getByText('Regular')).toBeInTheDocument()
+    expect(screen.getByText('Large')).toBeInTheDocument()
+    expect(screen.getByText('Choose one')).toBeInTheDocument()
+  })
+
+  it('blocks adding to the order until a required choice is made', async () => {
+    menuApi.get.mockImplementation(path =>
+      path === '/categories/'
+        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED]) })
+        : Promise.resolve({ data: { value: null } })
+    )
+    renderOrder('/order?t=t3')
+    await reachCustomise()
+
+    expect(screen.getByText('Add to order')).toBeDisabled()
+    expect(screen.getByText(/Please choose: Size/i)).toBeInTheDocument()
+
+    await userEvent.click(screen.getByText('Large'))
+
+    expect(screen.getByText('Add to order')).toBeEnabled()
+  })
+
+  it('replaces the pick in a choose-one group', async () => {
+    menuApi.get.mockImplementation(path =>
+      path === '/categories/'
+        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED]) })
+        : Promise.resolve({ data: { value: null } })
+    )
+    renderOrder('/order?t=t3')
+    await reachCustomise()
+
+    await userEvent.click(screen.getByText('Regular'))
+    await userEvent.click(screen.getByText('Large'))
+    await userEvent.click(screen.getByText('Add to order'))
+
+    // Only the last pick survives, not both.
+    expect(screen.getByText('Size: Large')).toBeInTheDocument()
+  })
+
+  it('accumulates up to the cap then locks the rest', async () => {
+    menuApi.get.mockImplementation(path =>
+      path === '/categories/'
+        ? Promise.resolve({ data: withOptionGroups([EXTRAS_UP_TO_TWO]) })
+        : Promise.resolve({ data: { value: null } })
+    )
+    renderOrder('/order?t=t3')
+    await reachCustomise()
+
+    expect(screen.getByText('Choose up to 2')).toBeInTheDocument()
+    await userEvent.click(screen.getByText('Egg'))
+    await userEvent.click(screen.getByText('Bacon'))
+
+    expect(screen.getByText('Avocado')).toBeDisabled()
+
+    // Deselecting frees the slot again.
+    await userEvent.click(screen.getByText('Egg'))
+    expect(screen.getByText('Avocado')).toBeEnabled()
+  })
+
+  it('sends the chosen options with the order', async () => {
+    menuApi.get.mockImplementation(path =>
+      path === '/categories/'
+        ? Promise.resolve({ data: withOptionGroups([SIZE_REQUIRED, EXTRAS_UP_TO_TWO]) })
+        : Promise.resolve({ data: { value: null } })
+    )
+    renderOrder('/order?t=t3')
+    await reachCustomise()
+
+    await userEvent.click(screen.getByText('Large'))
+    await userEvent.click(screen.getByText('Bacon'))
+    await userEvent.click(screen.getByText('Add to order'))
+    await userEvent.click(screen.getByText('Place Order'))
+
+    await waitFor(() => expect(orderApi.post).toHaveBeenCalled())
+    expect(orderApi.post.mock.calls[0][1].items[0].options).toEqual([
+      { option_id: 101, option_name: 'Large', group_name: 'Size' },
+      { option_id: 201, option_name: 'Bacon', group_name: 'Extras' },
+    ])
+  })
+
+  it('does not get in the way of items with no option groups', async () => {
+    renderOrder('/order?t=t3')
+    await reachCustomise()
+
+    expect(screen.getByText(/Tap toppings to add them/i)).toBeInTheDocument()
+    expect(screen.getByText('Add to order')).toBeEnabled()
   })
 })

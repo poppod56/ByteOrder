@@ -21,6 +21,7 @@ export default function Order() {
   const [selectedCat, setSelectedCat] = useState(null)
   const [selectedItem, setSelectedItem] = useState(null)
   const [customIngredients, setCustomIngredients] = useState({}) // ingredient_id -> included bool
+  const [customOptions, setCustomOptions] = useState({})         // option_group_id -> [option_id]
   const [basket, setBasket] = useState([])
   const [submitting, setSubmitting] = useState(false)
   const [kitchenName, setKitchenName] = useState('ByteOrder')
@@ -53,6 +54,12 @@ export default function Order() {
     return () => { cancelled = true }
   }, [tableCode])
 
+  const optionGroups = selectedItem?.option_groups || []
+  // Groups the kitchen marked as needing a choice that has not been made yet.
+  const unmetGroups = optionGroups.filter(
+    g => (customOptions[g.id] || []).length < optionMinimum(g)
+  )
+
   function startCustomise(item) {
     setSelectedItem(item)
     const defaults = {}
@@ -60,7 +67,33 @@ export default function Order() {
       defaults[ii.ingredient.id] = { name: ii.ingredient.name, included: ii.is_default }
     })
     setCustomIngredients(defaults)
+    setCustomOptions(Object.fromEntries((item.option_groups || []).map(g => [g.id, []])))
     setStep(STEPS.CUSTOMISE)
+  }
+
+  // A group of one is a choice between alternatives, so picking replaces; a wider
+  // group accumulates up to its cap. max_select of 0 would otherwise allow nothing.
+  function optionCap(group) {
+    return group.max_select > 0 ? group.max_select : 1
+  }
+
+  // `required` on its own means "at least one", even when min_select was left at 0.
+  function optionMinimum(group) {
+    return group.required ? Math.max(1, group.min_select) : group.min_select
+  }
+
+  function toggleOption(group, optionId) {
+    setCustomOptions(prev => {
+      const chosen = prev[group.id] || []
+      if (chosen.includes(optionId)) {
+        return { ...prev, [group.id]: chosen.filter(id => id !== optionId) }
+      }
+      if (optionCap(group) === 1) {
+        return { ...prev, [group.id]: [optionId] }
+      }
+      if (chosen.length >= optionCap(group)) return prev
+      return { ...prev, [group.id]: [...chosen, optionId] }
+    })
   }
 
   function addToBasket() {
@@ -69,11 +102,18 @@ export default function Order() {
       ingredient_name: v.name,
       included: v.included,
     }))
+    const opts = optionGroups.flatMap(group =>
+      (customOptions[group.id] || []).map(optionId => ({
+        option_id: optionId,
+        option_name: group.options.find(o => o.id === optionId)?.name || '',
+        group_name: group.name,
+      }))
+    )
     setBasket(prev => [...prev, {
       menu_item_id: selectedItem.id,
       menu_item_name: selectedItem.name,
       ingredients: ing,
-      options: [],
+      options: opts,
     }])
     setStep(STEPS.BASKET)
   }
@@ -248,7 +288,58 @@ export default function Order() {
         {step === STEPS.CUSTOMISE && selectedItem && (
           <div>
             <h2 className="text-2xl font-bold text-brand-text mb-1">{selectedItem.name}</h2>
-            <p className="text-gray-500 mb-6">Tap toppings to add them to your order</p>
+            <p className="text-gray-500 mb-6">
+              {optionGroups.length > 0 ? 'Make your choices below' : 'Tap toppings to add them to your order'}
+            </p>
+
+            {optionGroups.map(group => {
+              const chosen = customOptions[group.id] || []
+              const cap = optionCap(group)
+              const minimum = optionMinimum(group)
+              return (
+                <div key={group.id} className="bg-brand-surface rounded-2xl shadow p-5 mb-6">
+                  <div className="flex items-baseline justify-between mb-1">
+                    <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">
+                      {group.name}
+                    </h3>
+                    {minimum > 0 && (
+                      <span className="text-xs font-semibold text-brand-600">Required</span>
+                    )}
+                  </div>
+                  <p className="text-xs text-gray-400 mb-3">
+                    {cap === 1 ? 'Choose one' : `Choose up to ${cap}`}
+                    {minimum > 1 && ` — at least ${minimum}`}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {group.options.length === 0 && (
+                      <p className="text-sm text-gray-400">No choices set up yet</p>
+                    )}
+                    {group.options.map(option => {
+                      const picked = chosen.includes(option.id)
+                      // Greyed out rather than hidden once the cap is reached, so the
+                      // remaining choices stay visible and the limit is obvious.
+                      const atCap = !picked && cap > 1 && chosen.length >= cap
+                      return (
+                        <button
+                          key={option.id}
+                          onClick={() => toggleOption(group, option.id)}
+                          disabled={atCap}
+                          className={`px-4 py-2 rounded-full font-medium text-sm border-2 transition-all ${
+                            picked
+                              ? 'bg-brand-600 border-brand-600 text-white'
+                              : atCap
+                                ? 'bg-white border-gray-100 text-gray-300'
+                                : 'bg-white border-gray-200 text-gray-500 hover:border-brand-400 hover:text-brand-600'
+                          }`}
+                        >
+                          {option.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
 
             <div className="bg-brand-surface rounded-2xl shadow p-5 mb-6">
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-3">Add toppings</h3>
@@ -275,9 +366,15 @@ export default function Order() {
               </div>
             </div>
 
+            {unmetGroups.length > 0 && (
+              <p className="text-sm text-gray-500 mb-2 text-center">
+                Please choose: {unmetGroups.map(g => g.name).join(', ')}
+              </p>
+            )}
             <button
               onClick={addToBasket}
-              className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-lg transition-colors"
+              disabled={unmetGroups.length > 0}
+              className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-bold py-3 rounded-xl text-lg transition-colors"
             >
               Add to order
             </button>
@@ -301,12 +398,17 @@ export default function Order() {
                         Remove
                       </button>
                     </div>
+                    {item.options.length > 0 && (
+                      <p className="text-sm text-brand-600 mt-1">
+                        {item.options.map(o => `${o.group_name}: ${o.option_name}`).join(' · ')}
+                      </p>
+                    )}
                     {item.ingredients.filter(i => i.included).length > 0 ? (
                       <p className="text-sm text-gray-500 mt-1">
                         {item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
                       </p>
                     ) : (
-                      <p className="text-sm text-gray-400 mt-1">Plain</p>
+                      item.options.length === 0 && <p className="text-sm text-gray-400 mt-1">Plain</p>
                     )}
                   </div>
                 ))}
