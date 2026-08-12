@@ -17,7 +17,11 @@ vi.mock('qrcode.react', () => ({ QRCodeSVG: () => null }))
 
 import api from '../lib/api'
 
-const TABLE = { id: 1, kitchen_id: 'k', code: 'table-1', label: 'Table 1', active: true, created_at: '2026-01-01T00:00:00' }
+const TABLE = {
+  id: 1, kitchen_id: 'k', code: 'table-1', label: 'Table 1', active: true,
+  code_printed_at: '2026-01-01T00:00:00', created_at: '2026-01-01T00:00:00',
+}
+const UNPRINTED = { ...TABLE, code_printed_at: null }
 
 function mockApi({ settings = [], slug = null, tables = [TABLE] } = {}) {
   api.get.mockImplementation(url => {
@@ -114,19 +118,33 @@ describe('Tables — listing', () => {
     })
   })
 
-  it('warns to reprint after issuing a new QR code', async () => {
-    mockApi()
-    api.post.mockResolvedValue({ data: { ...TABLE, code: 'newcode123' } })
+  it('warns about codes the server says are unprinted', async () => {
+    mockApi({ tables: [UNPRINTED] })
+    render(<Tables />)
+
+    expect(await screen.findByText(/has a QR code that has not been printed yet/i)).toBeInTheDocument()
+  })
+
+  it('stays quiet once the server says the code was printed', async () => {
+    mockApi({ tables: [TABLE] })
+    render(<Tables />)
+
+    await screen.findAllByText('Table 1')
+    expect(screen.queryByText(/not been printed yet/i)).not.toBeInTheDocument()
+  })
+
+  it('rotates and reloads so the warning comes from the server, not this session', async () => {
+    mockApi({ tables: [TABLE] })
+    api.post.mockResolvedValue({ data: UNPRINTED })
     vi.spyOn(window, 'confirm').mockReturnValue(true)
     render(<Tables />)
     await screen.findAllByText('Table 1')
 
     await userEvent.click(screen.getByRole('button', { name: 'New QR' }))
 
-    await waitFor(() => {
-      expect(api.post).toHaveBeenCalledWith('/orders/tables/1/rotate')
-    })
-    expect(await screen.findByText(/old sticker no longer works/i)).toBeInTheDocument()
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith('/orders/tables/1/rotate'))
+    // Re-fetched rather than tracked locally, so a refresh cannot lose the warning.
+    expect(api.get).toHaveBeenCalledWith('/orders/tables/')
   })
 
   it('does not rotate when the confirmation is declined', async () => {
@@ -138,25 +156,32 @@ describe('Tables — listing', () => {
     await userEvent.click(screen.getByRole('button', { name: 'New QR' }))
 
     expect(api.post).not.toHaveBeenCalled()
-    expect(screen.queryByText(/old sticker no longer works/i)).not.toBeInTheDocument()
   })
 
-  it('clears the reprint warning once the sheet is printed', async () => {
-    mockApi()
-    api.post.mockResolvedValue({ data: { ...TABLE, code: 'newcode123' } })
-    vi.spyOn(window, 'confirm').mockReturnValue(true)
+  it('printing alone does not clear the warning', async () => {
+    mockApi({ tables: [UNPRINTED] })
     vi.spyOn(window, 'print').mockImplementation(() => {})
     render(<Tables />)
-    await screen.findAllByText('Table 1')
-
-    await userEvent.click(screen.getByRole('button', { name: 'New QR' }))
-    await screen.findByText(/old sticker no longer works/i)
+    await screen.findByText(/not been printed yet/i)
 
     await userEvent.click(screen.getByRole('button', { name: 'Print QR sheet' }))
 
+    // The dialog can be cancelled, and the paper still has to reach the table.
     expect(window.print).toHaveBeenCalled()
+    expect(screen.getByText(/not been printed yet/i)).toBeInTheDocument()
+    expect(api.post).not.toHaveBeenCalled()
+  })
+
+  it('clears the warning only when the stickers are confirmed replaced', async () => {
+    mockApi({ tables: [UNPRINTED] })
+    api.post.mockResolvedValue({ data: [TABLE] })
+    render(<Tables />)
+    await screen.findByText(/not been printed yet/i)
+
+    await userEvent.click(screen.getByRole('button', { name: /I've replaced the stickers/i }))
+
     await waitFor(() => {
-      expect(screen.queryByText(/old sticker no longer works/i)).not.toBeInTheDocument()
+      expect(api.post).toHaveBeenCalledWith('/orders/tables/mark-printed', { ids: [1] })
     })
   })
 

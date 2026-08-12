@@ -24,6 +24,10 @@ class Table(Base):
     code = Column(String, nullable=False, index=True)
     label = Column(String, nullable=False)
     active = Column(Boolean, nullable=False, default=True)
+    # NULL means the current code has never been printed — set on creation and
+    # reset on every rotation. Kept server-side so the reminder to replace a
+    # sticker follows the kitchen, not the browser that happened to rotate it.
+    code_printed_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=utcnow)
 
 

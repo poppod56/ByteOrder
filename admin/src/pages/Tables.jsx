@@ -12,9 +12,6 @@ export default function Tables() {
   const [frontendUrl, setFrontendUrl] = useState('')
   const [slug, setSlug] = useState(null)
   const [brandColour, setBrandColour] = useState('#ea580c')
-  // Tables whose code changed this session — their stickers are now dead, and
-  // forgetting to reprint is the most likely way rotation goes wrong.
-  const [needsReprint, setNeedsReprint] = useState([])
 
   useEffect(() => {
     loadTables()
@@ -80,16 +77,27 @@ export default function Tables() {
     setSuccess('')
     try {
       await api.post(`/orders/tables/${table.id}/rotate`)
-      setNeedsReprint(prev => (prev.includes(table.label) ? prev : [...prev, table.label]))
       loadTables()
     } catch (err) {
       setError(err.response?.data?.detail || 'Failed to generate a new QR code.')
     }
   }
 
+  // Only printing, deliberately: the dialog can be cancelled and the paper still
+  // has to get onto the table, so clearing the reminder is a separate, explicit act.
   function handlePrint() {
     window.print()
-    setNeedsReprint([])
+  }
+
+  async function handleMarkPrinted() {
+    setError('')
+    try {
+      await api.post('/orders/tables/mark-printed', { ids: unprinted.map(t => t.id) })
+      setSuccess('Marked as replaced.')
+      loadTables()
+    } catch (err) {
+      setError(err.response?.data?.detail || 'Failed to update those tables.')
+    }
   }
 
   async function handleRemove(table) {
@@ -111,6 +119,10 @@ export default function Tables() {
   const orderPath = slug ? `/k/${slug}/order` : '/order'
   const tableUrl = code => `${baseUrl}${orderPath}?t=${encodeURIComponent(code)}`
 
+  // Server-side, so the reminder survives a refresh and reaches whoever is
+  // actually holding the printer — not just the browser that rotated the code.
+  const unprinted = tables.filter(t => !t.code_printed_at)
+
   return (
     <div className="space-y-8">
       {/* Print styles: hide the app shell and keep each QR card whole. */}
@@ -129,10 +141,19 @@ export default function Tables() {
         {success && <p className="text-green-600 text-sm">{success}</p>}
         {error && <p className="text-red-600 text-sm">{error}</p>}
 
-        {needsReprint.length > 0 && (
+        {unprinted.length > 0 && (
           <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-lg px-4 py-3">
-            New QR code issued for <strong>{needsReprint.join(', ')}</strong>. The old sticker no longer
-            works — print the sheet and replace it now.
+            <p className="mb-2">
+              {unprinted.length === 1 ? 'This table has' : `These ${unprinted.length} tables have`} a QR
+              code that has not been printed yet:{' '}
+              <strong>{unprinted.map(t => t.label).join(', ')}</strong>. Any older sticker no longer works.
+            </p>
+            <button
+              onClick={handleMarkPrinted}
+              className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg"
+            >
+              I've replaced the stickers
+            </button>
           </div>
         )}
 

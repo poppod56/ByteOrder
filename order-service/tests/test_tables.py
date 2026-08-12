@@ -380,3 +380,69 @@ def test_missing_name_error_is_distinct_from_unknown_table(client):
     response = client.post("/orders/", json=_order(customer_name="  "))
     assert response.status_code == 400
     assert response.json()["detail"] != {"code": "unknown_table", "message": "Unknown table code"}
+
+
+# ── Printed-sticker state ─────────────────────────────────────────────────────
+# Held server-side so the reminder survives a refresh and follows the kitchen
+# rather than the browser that happened to rotate the code.
+
+def test_a_new_table_counts_as_unprinted(client):
+    assert _make_table(client, "Table 1")["code_printed_at"] is None
+
+
+def test_marking_printed_records_a_timestamp(client):
+    table = _make_table(client, "Table 1")
+    marked = client.post("/orders/tables/mark-printed", json={"ids": [table["id"]]})
+    assert marked.status_code == 200
+    assert marked.json()[0]["code_printed_at"] is not None
+
+
+def test_printed_state_survives_a_reload(client):
+    table = _make_table(client, "Table 1")
+    client.post("/orders/tables/mark-printed", json={"ids": [table["id"]]})
+    assert client.get("/orders/tables/").json()[0]["code_printed_at"] is not None
+
+
+def test_rotating_marks_the_code_unprinted_again(client):
+    table = _make_table(client, "Table 1")
+    client.post("/orders/tables/mark-printed", json={"ids": [table["id"]]})
+
+    rotated = client.post(f"/orders/tables/{table['id']}/rotate")
+    assert rotated.json()["code_printed_at"] is None
+
+
+def test_marking_printed_leaves_other_tables_alone(client):
+    tables = client.post("/orders/tables/", json={"label": "T", "count": 2}).json()
+    client.post("/orders/tables/mark-printed", json={"ids": [tables[0]["id"]]})
+
+    listed = {t["id"]: t["code_printed_at"] for t in client.get("/orders/tables/").json()}
+    assert listed[tables[0]["id"]] is not None
+    assert listed[tables[1]["id"]] is None
+
+
+def test_cannot_mark_another_kitchens_table_printed(client, db):
+    from app import models
+
+    other = models.Table(kitchen_id="other-kitchen", code="theircode2", label="Theirs")
+    db.add(other)
+    db.commit()
+
+    response = client.post("/orders/tables/mark-printed", json={"ids": [other.id]})
+    assert response.status_code == 200
+    assert response.json() == []
+    db.refresh(other)
+    assert other.code_printed_at is None
+
+
+def test_marking_printed_with_no_ids_is_a_no_op(client):
+    _make_table(client, "Table 1")
+    assert client.post("/orders/tables/mark-printed", json={"ids": []}).json() == []
+
+
+def test_bulk_create_of_two_hundred_tables_is_not_quadratic(client):
+    """Label allocation reads existing labels once rather than querying per candidate."""
+    response = client.post("/orders/tables/", json={"label": "Seat", "count": 200})
+    assert response.status_code == 201
+    labels = [t["label"] for t in response.json()]
+    assert len(set(labels)) == 200
+    assert labels[0] == "Seat 1" and labels[-1] == "Seat 200"

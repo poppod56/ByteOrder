@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.auth import get_kitchen_id
 from app.database import get_db
+from app.timeutil import utcnow
 
 router = APIRouter(prefix="/orders/tables", tags=["tables"])
 
@@ -30,15 +31,23 @@ def _label_taken(label: str, kitchen_id: str, db: Session) -> bool:
     ).first() is not None
 
 
-def _next_free_label(base: str, kitchen_id: str, db: Session) -> str:
+def _existing_labels(kitchen_id: str, db: Session) -> set[str]:
+    return {
+        row[0] for row in
+        db.query(models.Table.label).filter(models.Table.kitchen_id == kitchen_id).all()
+    }
+
+
+def _next_free_label(base: str, taken: set[str]) -> str:
     """`base 1`, `base 2`, … skipping numbers already in use.
 
     Numbering continues past existing tables rather than restarting, so adding
     four more "Table"s to four existing ones gives Table 5-8, not a second set
-    of Table 1-4 that the kitchen could not tell apart.
+    of Table 1-4 that the kitchen could not tell apart. `taken` is read once and
+    updated by the caller, so creating 200 tables is one query, not 200 × 200.
     """
     n = 1
-    while _label_taken(f"{base} {n}", kitchen_id, db):
+    while f"{base} {n}" in taken:
         n += 1
     return f"{base} {n}"
 
@@ -102,15 +111,17 @@ def create_tables(
     if data.count < 1 or data.count > 200:
         raise HTTPException(status_code=400, detail="Count must be between 1 and 200")
 
-    if data.count == 1 and _label_taken(label, kitchen_id, db):
+    taken = _existing_labels(kitchen_id, db)
+    if data.count == 1 and label in taken:
         raise HTTPException(status_code=409, detail=f"A table called '{label}' already exists")
 
     created = []
     for _ in range(data.count):
-        row_label = label if data.count == 1 else _next_free_label(label, kitchen_id, db)
+        row_label = label if data.count == 1 else _next_free_label(label, taken)
+        taken.add(row_label)
         table = models.Table(kitchen_id=kitchen_id, code=_random_code(kitchen_id, db), label=row_label)
         db.add(table)
-        # Flush per row so the next iteration's lookups see what we just issued.
+        # Flush per row so _random_code sees codes issued earlier in this loop.
         db.flush()
         created.append(table)
 
@@ -170,9 +181,35 @@ def rotate_table_code(
         raise HTTPException(status_code=404, detail="Table not found")
 
     table.code = _random_code(kitchen_id, db)
+    # The printed sticker is now wrong, so this code counts as unprinted again.
+    table.code_printed_at = None
     db.commit()
     db.refresh(table)
     return table
+
+
+@router.post("/mark-printed", response_model=list[schemas.TableOut])
+def mark_codes_printed(
+    data: schemas.TablesPrinted,
+    db: Session = Depends(get_db),
+    kitchen_id: str = Depends(get_kitchen_id),
+):
+    """Record that the stickers for these tables have been replaced.
+
+    Confirmed explicitly rather than inferred from opening the print dialog —
+    printing can be cancelled, and the paper still has to reach the table.
+    """
+    tables = db.query(models.Table).filter(
+        models.Table.kitchen_id == kitchen_id,
+        models.Table.id.in_(data.ids or []),
+    ).all()
+    now = utcnow()
+    for table in tables:
+        table.code_printed_at = now
+    db.commit()
+    for table in tables:
+        db.refresh(table)
+    return tables
 
 
 @router.delete("/{table_id}", status_code=204)

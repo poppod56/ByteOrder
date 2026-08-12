@@ -81,12 +81,17 @@ class TableUpdate(BaseModel):
     active: Optional[bool] = None
 
 
+class TablesPrinted(BaseModel):
+    ids: list[int] = []
+
+
 class TableOut(BaseModel):
     id: int
     kitchen_id: str
     code: str
     label: str
     active: bool
+    code_printed_at: Optional[datetime] = None
     created_at: datetime
     model_config = {"from_attributes": True}
 
