@@ -67,6 +67,21 @@ def _run_migrations():
         # an existing table would fail startup if legacy rows ever held bad ids.
         conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_id INTEGER"))
         conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS table_label VARCHAR"))
+        # Order numbers are per-kitchen, so the global unique index on
+        # order_number made two kitchens contend for the same number space.
+        # Existing rows are globally unique, so the composite is safe to add.
+        conn.execute(text("ALTER TABLE orders DROP CONSTRAINT IF EXISTS orders_order_number_key"))
+        conn.execute(text("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_name = 'orders' AND constraint_name = 'orders_kitchen_order_number_key'
+                ) THEN
+                    ALTER TABLE orders ADD CONSTRAINT orders_kitchen_order_number_key
+                        UNIQUE (kitchen_id, order_number);
+                END IF;
+            END $$
+        """))
         conn.commit()
 
 

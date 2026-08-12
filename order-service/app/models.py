@@ -24,10 +24,12 @@ class Table(Base):
 
 class Order(Base):
     __tablename__ = "orders"
+    # Order numbers restart per kitchen, so they are only unique within one.
+    __table_args__ = (UniqueConstraint("kitchen_id", "order_number", name="orders_kitchen_order_number_key"),)
     id = Column(Integer, primary_key=True, index=True)
     public_id = Column(String, nullable=False, unique=True, index=True, default=lambda: str(uuid.uuid4()))
     kitchen_id = Column(String, nullable=False, index=True)
-    order_number = Column(String, unique=True, nullable=False)
+    order_number = Column(String, nullable=False)
     customer_name = Column(String, nullable=False)
     status = Column(String, default="pending")  # pending, in_progress, ready, completed
     # NULL table_id means takeaway — ordered from the kiosk QR, not a table QR.
