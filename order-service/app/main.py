@@ -82,6 +82,32 @@ def _run_migrations():
                 END IF;
             END $$
         """))
+        # `tables` predates these two additions on any database that ran an
+        # earlier build of this branch — create_all only creates missing tables,
+        # it never alters an existing one.
+        conn.execute(text("ALTER TABLE tables ADD COLUMN IF NOT EXISTS code_printed_at TIMESTAMP"))
+        # A duplicate label makes the printed ticket ambiguous, so the column is
+        # unique — but earlier builds allowed duplicates, so any existing ones are
+        # suffixed first rather than letting the constraint fail startup.
+        conn.execute(text("""
+            UPDATE tables t SET label = t.label || ' (' || d.rn || ')'
+            FROM (
+                SELECT id, row_number() OVER (PARTITION BY kitchen_id, label ORDER BY id) AS rn
+                FROM tables
+            ) d
+            WHERE t.id = d.id AND d.rn > 1
+        """))
+        conn.execute(text("""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.table_constraints
+                    WHERE table_name = 'tables' AND constraint_name = 'tables_kitchen_label_key'
+                ) THEN
+                    ALTER TABLE tables ADD CONSTRAINT tables_kitchen_label_key
+                        UNIQUE (kitchen_id, label);
+                END IF;
+            END $$
+        """))
         conn.commit()
 
 

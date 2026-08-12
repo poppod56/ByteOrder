@@ -258,6 +258,92 @@ placed under.
 
 ---
 
+## Testing locally
+
+### Unit tests
+
+```bash
+cd order-service   && pip install -r requirements.txt && python -m pytest tests/ -v
+cd menu-service    && pip install -r requirements.txt && python -m pytest tests/ -v
+cd print-service   && pip install -r requirements.txt && python -m pytest tests/ -v
+cd pi-printer-client && pip install -r requirements.txt && python -m pytest tests/ -v
+cd frontend && npm install && npm test -- --run
+cd admin    && npm install && npm test          # Express/server tests (jest)
+cd admin    && npx vitest run src               # React component tests
+```
+
+### Migration tests (needs PostgreSQL)
+
+The startup migrations are Postgres-specific, so they are skipped unless a
+database is provided. They build the pre-migration schema in a throwaway
+namespace and never touch application data:
+
+```bash
+docker run -d --rm --name bo-migtest \
+  -e POSTGRES_USER=byteorder -e POSTGRES_PASSWORD=byteorder \
+  -e POSTGRES_DB=byteorder_migrationtest -p 55432:5432 postgres:16
+
+cd order-service
+ORDER_SERVICE_TEST_DATABASE_URL=postgresql://byteorder:byteorder@localhost:55432/byteorder_migrationtest \
+  python -m pytest tests/test_migrations_postgres.py -v
+
+docker rm -f bo-migtest
+```
+
+### Running the whole stack
+
+```bash
+cd deploy
+cat > .env <<'ENV'
+AUTH_MODE=self-hosted
+DEFAULT_KITCHEN_ID=default
+POSTGRES_PASSWORD=byteorder
+ADMIN_USERNAME=admin
+ADMIN_PASSWORD=localtest123
+JWT_SECRET=local-testing-only-rotate-this
+ENV
+docker compose up -d --build
+docker compose ps            # all services should be running
+```
+
+| URL | What |
+|-----|------|
+| `http://localhost:3000` | Customer site — kiosk screen with the QR code |
+| `http://localhost:3001` | Admin panel (log in with the values above) |
+
+Then, to exercise table ordering: **Settings** → set Frontend URL to
+`http://localhost:3000` → **Tables** → add tables → **Print QR sheet**. Scanning
+from a phone needs a LAN address rather than `localhost`, so set Frontend URL to
+your machine's IP if you want to test with a real phone.
+
+### Seeing a printed ticket without a printer
+
+Point the print service at any HTTP endpoint that accepts
+`POST /print {"text": "..."}`. A throwaway catcher is enough:
+
+```bash
+python3 - <<'PY' &
+from http.server import BaseHTTPRequestHandler, HTTPServer
+import json
+class H(BaseHTTPRequestHandler):
+    def do_POST(self):
+        body = self.rfile.read(int(self.headers.get('Content-Length', 0)))
+        print(json.loads(body).get('text', ''), flush=True)
+        self.send_response(200); self.end_headers()
+    def log_message(self, *a): pass
+HTTPServer(('0.0.0.0', 18080), H).serve_forever()
+PY
+```
+
+Set **Settings → Printer URL** to `http://host.docker.internal:18080` (Docker
+Desktop) and place an order — the ticket text is printed to your terminal.
+
+```bash
+cd deploy && docker compose down -v   # tear down, including the database
+```
+
+---
+
 ## Observability (Dash0 / OpenTelemetry)
 
 ByteOrder is instrumented with OpenTelemetry. For [Dash0](https://github.com/dash0hq/dash0-operator):

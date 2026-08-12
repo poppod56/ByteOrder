@@ -23,6 +23,23 @@ ACTIVE_STATUSES = ("pending", "in_progress", "ready")
 # Allocating an order number is read-then-insert, so simultaneous orders can pick
 # the same one. The unique constraint is the arbiter; the loser simply retries.
 MAX_ORDER_NUMBER_ATTEMPTS = 5
+ORDER_NUMBER_CONSTRAINT = "orders_kitchen_order_number_key"
+
+
+def _is_order_number_collision(exc: IntegrityError) -> bool:
+    """True only for the (kitchen_id, order_number) unique violation.
+
+    Retrying anything else would bury a real fault — a corrupt foreign key or a
+    public_id clash would surface as "could not allocate an order number" after
+    five pointless attempts. Postgres names the violated constraint in psycopg2's
+    diagnostics; SQLite has no diagnostics, so its message (which names the
+    columns) is matched instead.
+    """
+    orig = getattr(exc, "orig", None)
+    constraint = getattr(getattr(orig, "diag", None), "constraint_name", None)
+    if constraint:
+        return constraint == ORDER_NUMBER_CONSTRAINT
+    return "order_number" in str(orig or exc)
 
 
 def _next_order_number(db: Session, kitchen_id: str) -> str:
@@ -150,10 +167,13 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
         try:
             order = _persist_order(data, kitchen_id, customer_name, table_id, table_label, db)
             break
-        except IntegrityError:
+        except IntegrityError as exc:
+            db.rollback()
+            if not _is_order_number_collision(exc):
+                log.exception("Order insert violated an unexpected constraint")
+                raise
             # Someone else took this number between our SELECT and INSERT. Start
             # over — the retry re-reads and sees the row that beat us.
-            db.rollback()
             log.warning(
                 "Order number collision for kitchen %s (attempt %d/%d)",
                 kitchen_id, attempt + 1, MAX_ORDER_NUMBER_ATTEMPTS,

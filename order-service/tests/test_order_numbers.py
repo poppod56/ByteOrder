@@ -2,6 +2,8 @@
 import json
 from unittest.mock import patch
 
+import pytest
+
 from app import models
 from app.routers import orders as orders_router
 
@@ -143,3 +145,47 @@ def test_queue_payload_shape_is_unchanged(client, mock_redis):
     )
     assert set(payload) == {"order_id", "status"}
     assert payload["status"] == "pending"
+
+
+# ── Only order-number collisions are retried ─────────────────────────────────
+
+def test_a_non_order_number_violation_is_not_swallowed(client, db):
+    """A public_id clash must surface, not be reported as an allocation failure.
+
+    Retrying every IntegrityError would turn any constraint or foreign-key fault
+    into a misleading 503 after five pointless attempts.
+    """
+    from sqlalchemy.exc import IntegrityError
+
+    client.post("/orders/", json=MINIMAL_ORDER)
+    existing = db.query(models.Order).first()
+
+    with patch("app.models.uuid.uuid4", return_value=existing.public_id):
+        with pytest.raises(IntegrityError):
+            client.post("/orders/", json=MINIMAL_ORDER)
+
+
+def test_order_number_collision_is_recognised_on_sqlite_and_postgres():
+    """The predicate reads psycopg2 diagnostics when present, the message otherwise."""
+    from sqlalchemy.exc import IntegrityError
+
+    class _Diag:
+        def __init__(self, name):
+            self.constraint_name = name
+
+    class _PgError(Exception):
+        def __init__(self, name):
+            self.diag = _Diag(name)
+
+    def wrap(orig):
+        return IntegrityError("stmt", {}, orig)
+
+    assert orders_router._is_order_number_collision(
+        wrap(_PgError("orders_kitchen_order_number_key"))) is True
+    assert orders_router._is_order_number_collision(
+        wrap(_PgError("orders_public_id_key"))) is False
+    # SQLite has no diagnostics — it names the columns in the message instead.
+    assert orders_router._is_order_number_collision(
+        wrap(Exception("UNIQUE constraint failed: orders.kitchen_id, orders.order_number"))) is True
+    assert orders_router._is_order_number_collision(
+        wrap(Exception("UNIQUE constraint failed: orders.public_id"))) is False
