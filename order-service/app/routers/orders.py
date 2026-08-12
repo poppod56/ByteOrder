@@ -1,7 +1,7 @@
 import json
 import asyncio
-from datetime import datetime
 import logging
+from datetime import datetime
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -12,6 +12,7 @@ from app import models, schemas
 from app.database import get_db, SessionLocal
 from app.redis_client import get_redis
 from app.auth import get_kitchen_id
+from app.timeutil import utcnow
 
 log = logging.getLogger(__name__)
 
@@ -25,7 +26,7 @@ MAX_ORDER_NUMBER_ATTEMPTS = 5
 
 
 def _next_order_number(db: Session, kitchen_id: str) -> str:
-    today = datetime.utcnow().strftime("%Y%m%d")
+    today = utcnow().strftime("%Y%m%d")
     prefix = f"BO-{today}-"
     last = (
         db.query(models.Order)
@@ -236,7 +237,7 @@ def get_history(date: str | None = None, db: Session = Depends(get_db), kitchen_
             raise HTTPException(status_code=400, detail="Use YYYY-MM-DD") from e
         q = q.filter(func.date(models.Order.created_at) == d)
     else:
-        q = q.filter(func.date(models.Order.created_at) == datetime.utcnow().date())
+        q = q.filter(func.date(models.Order.created_at) == utcnow().date())
     return q.order_by(models.Order.created_at.desc()).all()
 
 

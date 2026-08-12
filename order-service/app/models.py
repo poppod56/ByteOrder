@@ -1,8 +1,8 @@
 import uuid
-from datetime import datetime
 from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import relationship
 from app.database import Base
+from app.timeutil import utcnow
 
 
 class Table(Base):
@@ -19,7 +19,7 @@ class Table(Base):
     code = Column(String, nullable=False, index=True)
     label = Column(String, nullable=False)
     active = Column(Boolean, nullable=False, default=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
 
 
 class Order(Base):
@@ -36,8 +36,8 @@ class Order(Base):
     table_id = Column(Integer, ForeignKey("tables.id"), nullable=True)
     # Denormalised so renaming or deleting a table never rewrites order history.
     table_label = Column(String, nullable=True)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+    created_at = Column(DateTime, default=utcnow)
+    updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
 
@@ -80,6 +80,6 @@ class PrinterDevice(Base):
     kitchen_id = Column(String, nullable=True, index=True)    # set when claimed
     name = Column(String, nullable=True)
     ip_address = Column(String, nullable=True)
-    registered_at = Column(DateTime, default=datetime.utcnow)
+    registered_at = Column(DateTime, default=utcnow)
     claimed_at = Column(DateTime, nullable=True)
     last_seen_at = Column(DateTime, nullable=True)

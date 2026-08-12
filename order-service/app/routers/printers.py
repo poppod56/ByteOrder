@@ -1,6 +1,6 @@
 import asyncio
 import json
-from datetime import datetime
+from app.timeutil import utcnow
 
 from fastapi import APIRouter, Depends, Header, HTTPException
 from fastapi.responses import StreamingResponse
@@ -37,7 +37,7 @@ def register_printer(data: schemas.PrinterRegistration, db: Session = Depends(ge
 
     device = _get_printer_by_mac(mac, db)
     if device:
-        device.last_seen_at = datetime.utcnow()
+        device.last_seen_at = utcnow()
         if data.ip_address:
             device.ip_address = data.ip_address
     else:
@@ -83,7 +83,7 @@ def claim_printer(
 
     device.kitchen_id = kitchen_id
     device.name = data.name
-    device.claimed_at = datetime.utcnow()
+    device.claimed_at = utcnow()
     db.commit()
     db.refresh(device)
     return device
@@ -147,7 +147,7 @@ async def printer_stream(
         raise HTTPException(status_code=403, detail="Printer not yet claimed by a kitchen")
 
     # Update last_seen
-    device.last_seen_at = datetime.utcnow()
+    device.last_seen_at = utcnow()
     db.commit()
 
     kitchen_id = device.kitchen_id
