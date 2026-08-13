@@ -38,6 +38,26 @@ CREATE TABLE orders (
     created_at TIMESTAMP,
     updated_at TIMESTAMP
 );
+CREATE TABLE order_items (
+    id SERIAL PRIMARY KEY,
+    order_id INTEGER NOT NULL,
+    menu_item_id INTEGER NOT NULL,
+    menu_item_name VARCHAR NOT NULL
+);
+CREATE TABLE order_item_ingredients (
+    id SERIAL PRIMARY KEY,
+    order_item_id INTEGER NOT NULL,
+    ingredient_id INTEGER NOT NULL,
+    ingredient_name VARCHAR NOT NULL,
+    included BOOLEAN DEFAULT TRUE
+);
+CREATE TABLE order_item_options (
+    id SERIAL PRIMARY KEY,
+    order_item_id INTEGER NOT NULL,
+    option_id INTEGER NOT NULL,
+    option_name VARCHAR NOT NULL,
+    group_name VARCHAR NOT NULL
+);
 CREATE TABLE printer_devices (
     id SERIAL PRIMARY KEY,
     mac_address VARCHAR NOT NULL UNIQUE,
@@ -195,6 +215,29 @@ def test_duplicate_table_labels_are_suffixed_then_constrained(legacy_db, monkeyp
         )).fetchall())
         assert labels == ["Patio", "Table 1", "Table 1 (2)"]
         assert "tables_kitchen_label_key" in _constraints(conn, "tables")
+
+
+def test_price_columns_are_added_to_the_order_lines(legacy_db, monkeypatch):
+    """These ALTERs went untested until the fixture carried the line tables."""
+    _migrate(legacy_db, monkeypatch)
+
+    with legacy_db.connect() as conn:
+        def cols(table):
+            return {r[0] for r in conn.execute(text("""
+                SELECT column_name FROM information_schema.columns WHERE table_name = :t
+            """), {"t": table}).fetchall()}
+
+        assert {"quantity", "unit_price"} <= cols("order_items")
+        assert "price_delta" in cols("order_item_ingredients")
+        assert "price_delta" in cols("order_item_options")
+        assert "total" in cols("orders")
+
+        # Lines that predate quantity were one unit each, which is the default.
+        conn.execute(text("""
+            INSERT INTO order_items (order_id, menu_item_id, menu_item_name)
+            VALUES (1, 1, 'Burger')
+        """))
+        assert conn.execute(text("SELECT quantity FROM order_items")).scalar() == 1
 
 
 def test_existing_orders_start_out_unpaid(legacy_db, monkeypatch):
