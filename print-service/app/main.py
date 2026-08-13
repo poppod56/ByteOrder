@@ -115,6 +115,20 @@ def get_kitchen_name(kitchen_id: str) -> str:
     return row[0] if row and row[0] else "ByteOrder Kitchen"
 
 
+# Ticket labels only — menu item/ingredient/option names print in whatever
+# language the kitchen entered them in and are never translated here.
+TICKET_LABELS = {
+    "en": {
+        "order": "Order", "table": "TABLE", "name": "Name",
+        "with": "With", "no": "NO", "total": "TOTAL", "ea": "ea",
+    },
+    "th": {
+        "order": "ออเดอร์", "table": "โต๊ะ", "name": "ชื่อ",
+        "with": "ใส่", "no": "ไม่ใส่", "total": "ยอดรวม", "ea": "ต่อชิ้น",
+    },
+}
+
+
 def money(minor: int | None, currency: str) -> str:
     """Minor units to a printable amount. Prices are stored as integers so this
     is the only place rounding happens."""
@@ -126,17 +140,19 @@ def money(minor: int | None, currency: str) -> str:
 def format_order(order: dict, kitchen_id: str) -> dict:
     kitchen = get_kitchen_name(kitchen_id)
     # Carried on the payload rather than read here, so this formatter and
-    # pi-printer-client's cannot disagree about the currency.
+    # pi-printer-client's cannot disagree about the currency or language.
     currency = order.get("currency") or "THB"
+    lang = order.get("ticket_language") or "en"
+    labels = TICKET_LABELS.get(lang, TICKET_LABELS["en"])
     lines = [
         f"{kitchen}",
-        f"Order: {order['order_number']}",
+        f"{labels['order']}: {order['order_number']}",
     ]
     # Table first and unabbreviated — it's what staff read to deliver the food.
     if order.get("table_label"):
-        lines.append(f"TABLE: {order['table_label']}")
+        lines.append(f"{labels['table']}: {order['table_label']}")
     lines += [
-        f"Name:  {order['customer_name']}",
+        f"{labels['name']}:  {order['customer_name']}",
         "",
     ]
 
@@ -146,18 +162,18 @@ def format_order(order: dict, kitchen_id: str) -> dict:
         # Quantity always shown: "1x" reads the same way as "3x" and removes any
         # doubt about whether a count was simply left off.
         head = f">> {qty}x {item['name']}"
-        lines.append(head + (f"   {money(unit, currency)} ea" if unit is not None else ""))
+        lines.append(head + (f"   {money(unit, currency)} {labels['ea']}" if unit is not None else ""))
 
         included = [i["name"] for i in item.get("ingredients", []) if i["included"]]
         excluded = [i["name"] for i in item.get("ingredients", []) if not i["included"]]
 
         if included:
-            lines.append(f"   With: {', '.join(included)}")
+            lines.append(f"   {labels['with']}: {', '.join(included)}")
         for i in item.get("ingredients", []):
             if i["included"] and i.get("price_delta"):
                 lines.append(f"     + {i['name']}  {money(i['price_delta'], currency)}")
         if excluded:
-            lines.append(f"   NO:   {', '.join(excluded)}")
+            lines.append(f"   {labels['no']}:   {', '.join(excluded)}")
 
         options_by_group: dict[str, list[str]] = {}
         for opt in item.get("options", []):
@@ -172,7 +188,7 @@ def format_order(order: dict, kitchen_id: str) -> dict:
 
     if order.get("total") is not None:
         lines.append("-" * 32)
-        lines.append(f"TOTAL: {money(order['total'], currency)}")
+        lines.append(f"{labels['total']}: {money(order['total'], currency)}")
         lines.append("")
 
     return {"text": "\n".join(lines)}

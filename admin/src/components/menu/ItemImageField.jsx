@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../../lib/api'
 
 const MAX_BYTES = 512 * 1024
@@ -12,6 +13,7 @@ const ACCEPTED = ['image/png', 'image/jpeg', 'image/webp', 'image/gif']
  * carries no Authorization header, so it would come back 401.
  */
 export default function ItemImageField({ item, onChanged }) {
+  const { t } = useTranslation()
   const [objectUrl, setObjectUrl] = useState(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -43,12 +45,12 @@ export default function ItemImageField({ item, onChanged }) {
     setError('')
 
     if (!ACCEPTED.includes(file.type)) {
-      setError('Use a PNG, JPEG, WebP or GIF.')
+      setError(t('itemImageField.invalidType'))
       event.target.value = ''
       return
     }
     if (file.size > MAX_BYTES) {
-      setError(`Image must be under ${MAX_BYTES / 1024} KB (this one is ${Math.round(file.size / 1024)} KB).`)
+      setError(t('itemImageField.tooLarge', { max: MAX_BYTES / 1024, size: Math.round(file.size / 1024) }))
       event.target.value = ''
       return
     }
@@ -58,13 +60,13 @@ export default function ItemImageField({ item, onChanged }) {
       const dataUrl = await new Promise((resolve, reject) => {
         const reader = new FileReader()
         reader.onload = () => resolve(reader.result)
-        reader.onerror = () => reject(new Error('Could not read that file'))
+        reader.onerror = () => reject(new Error(t('itemImageField.readFailed')))
         reader.readAsDataURL(file)
       })
       await api.put(`/menu/items/${item.id}/image`, { data_url: dataUrl })
       onChanged()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Upload failed.')
+      setError(err.response?.data?.detail || t('itemImageField.uploadFailed'))
     } finally {
       setBusy(false)
       // Cleared so picking the same file again still fires a change event.
@@ -73,14 +75,14 @@ export default function ItemImageField({ item, onChanged }) {
   }
 
   async function handleRemove() {
-    if (!confirm(`Remove the photo for "${item.name}"?`)) return
+    if (!confirm(t('itemImageField.confirmRemove', { name: item.name }))) return
     setError('')
     setBusy(true)
     try {
       await api.delete(`/menu/items/${item.id}/image`)
       onChanged()
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not remove the photo.')
+      setError(err.response?.data?.detail || t('itemImageField.removeFailed'))
     } finally {
       setBusy(false)
     }
@@ -103,7 +105,7 @@ export default function ItemImageField({ item, onChanged }) {
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-3">
           <label className="text-xs font-semibold text-brand-600 hover:text-brand-700 cursor-pointer">
-            {item.has_image ? 'Replace photo' : 'Add photo'}
+            {item.has_image ? t('itemImageField.replacePhoto') : t('itemImageField.addPhoto')}
             <input
               ref={fileInput}
               type="file"
@@ -119,12 +121,12 @@ export default function ItemImageField({ item, onChanged }) {
               disabled={busy}
               className="text-xs text-red-500 hover:text-red-700 disabled:opacity-40"
             >
-              Remove photo
+              {t('itemImageField.removePhoto')}
             </button>
           )}
-          {busy && <span className="text-xs text-gray-400">Working…</span>}
+          {busy && <span className="text-xs text-gray-400">{t('itemImageField.working')}</span>}
         </div>
-        <p className="text-xs text-gray-400 mt-1">PNG, JPEG, WebP or GIF · max 512 KB</p>
+        <p className="text-xs text-gray-400 mt-1">{t('itemImageField.hint')}</p>
         {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
       </div>
     </div>

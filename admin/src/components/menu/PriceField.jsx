@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { parseMoney, toMoneyInput } from '../../lib/money'
 
 /**
@@ -8,7 +9,9 @@ import { parseMoney, toMoneyInput } from '../../lib/money'
  *
  * Blank is a real value: it means the item has no price and stays off the bill.
  */
-export default function PriceField({ label = 'Price', value, currency, onSave, hint }) {
+export default function PriceField({ label, value, currency, onSave, hint }) {
+  const { t } = useTranslation()
+  const displayLabel = label ?? t('priceField.label')
   const [text, setText] = useState(toMoneyInput(value))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -27,7 +30,7 @@ export default function PriceField({ label = 'Price', value, currency, onSave, h
     try {
       await onSave(parsed)
     } catch (err) {
-      setError(err.response?.data?.detail || 'Could not save that price.')
+      setError(err.response?.data?.detail || t('priceField.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -36,7 +39,7 @@ export default function PriceField({ label = 'Price', value, currency, onSave, h
   return (
     <div>
       <label className="block text-xs font-semibold text-gray-500 mb-1">
-        {label} <span className="font-normal text-gray-400">({currency})</span>
+        {displayLabel} <span className="font-normal text-gray-400">({currency})</span>
       </label>
       <div className="flex items-center gap-2">
         <input
@@ -45,7 +48,7 @@ export default function PriceField({ label = 'Price', value, currency, onSave, h
           onKeyDown={e => e.key === 'Enter' && dirty && save()}
           inputMode="decimal"
           placeholder="—"
-          aria-label={label}
+          aria-label={displayLabel}
           className={`w-24 border rounded px-2 py-1 text-sm text-right ${invalid ? 'border-red-400' : ''}`}
         />
         <button
@@ -53,10 +56,10 @@ export default function PriceField({ label = 'Price', value, currency, onSave, h
           disabled={!dirty || invalid || saving}
           className="text-xs font-semibold text-brand-600 disabled:text-gray-300"
         >
-          {saving ? 'Saving…' : 'Save'}
+          {saving ? t('priceField.saving') : t('priceField.save')}
         </button>
       </div>
-      {invalid && <p className="text-xs text-red-600 mt-1">Enter an amount like 120 or 120.50</p>}
+      {invalid && <p className="text-xs text-red-600 mt-1">{t('priceField.invalidHint')}</p>}
       {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
       {hint && !invalid && !error && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
     </div>

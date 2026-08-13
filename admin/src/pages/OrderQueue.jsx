@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../lib/api'
 import { formatMoney } from '../lib/money'
 
@@ -7,13 +8,6 @@ const VIEWS = {
   NEWEST: 'newest',
   TABLE: 'table',
   BY_ITEM: 'by-item',
-}
-
-const VIEW_LABELS = {
-  [VIEWS.OLDEST]: 'Oldest first',
-  [VIEWS.NEWEST]: 'Newest first',
-  [VIEWS.TABLE]: 'By table',
-  [VIEWS.BY_ITEM]: 'By dish',
 }
 
 /** A line's choices, as the one string that decides whether two lines are the same dish to cook. */
@@ -46,7 +40,6 @@ function groupByDish(orders) {
   return [...groups.values()].sort((a, b) => a.firstSeen.localeCompare(b.firstSeen))
 }
 
-const STATUS_LABELS = { pending: 'Pending', in_progress: 'Cooking', ready: 'Ready', completed: 'Done' }
 const STATUS_COLOURS = {
   pending: 'bg-yellow-100 text-yellow-800',
   in_progress: 'bg-blue-100 text-blue-800',
@@ -54,9 +47,26 @@ const STATUS_COLOURS = {
   completed: 'bg-gray-100 text-gray-600',
 }
 const NEXT_STATUS = { pending: 'in_progress', in_progress: 'ready', ready: 'completed' }
-const NEXT_LABEL = { pending: 'Start Cooking', in_progress: 'Mark Ready', ready: 'Complete' }
 
 export default function OrderQueue() {
+  const { t } = useTranslation()
+  const VIEW_LABELS = {
+    [VIEWS.OLDEST]: t('orderQueue.views.oldest'),
+    [VIEWS.NEWEST]: t('orderQueue.views.newest'),
+    [VIEWS.TABLE]: t('orderQueue.views.table'),
+    [VIEWS.BY_ITEM]: t('orderQueue.views.byItem'),
+  }
+  const STATUS_LABELS = {
+    pending: t('orderQueue.status.pending'),
+    in_progress: t('orderQueue.status.in_progress'),
+    ready: t('orderQueue.status.ready'),
+    completed: t('orderQueue.status.completed'),
+  }
+  const NEXT_LABEL = {
+    pending: t('orderQueue.nextLabel.pending'),
+    in_progress: t('orderQueue.nextLabel.in_progress'),
+    ready: t('orderQueue.nextLabel.ready'),
+  }
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [view, setView] = useState(VIEWS.OLDEST)
@@ -119,14 +129,14 @@ export default function OrderQueue() {
     [orders, view],
   )
 
-  if (loading) return <p className="text-gray-500">Loading queue…</p>
+  if (loading) return <p className="text-gray-500">{t('orderQueue.loading')}</p>
 
   return (
     <div>
       <div className="flex items-center justify-between mb-4 gap-4 flex-wrap">
-        <h1 className="text-2xl font-bold text-brand-text">Order Queue</h1>
+        <h1 className="text-2xl font-bold text-brand-text">{t('orderQueue.title')}</h1>
         <div className="flex items-center gap-3">
-          <label htmlFor="queue-view" className="text-sm text-gray-500">Show</label>
+          <label htmlFor="queue-view" className="text-sm text-gray-500">{t('orderQueue.show')}</label>
           <select
             id="queue-view"
             value={view}
@@ -137,12 +147,12 @@ export default function OrderQueue() {
               <option key={value} value={value}>{label}</option>
             ))}
           </select>
-          <button onClick={fetchQueue} className="text-sm text-brand-600 hover:underline">Refresh</button>
+          <button onClick={fetchQueue} className="text-sm text-brand-600 hover:underline">{t('orderQueue.refresh')}</button>
         </div>
       </div>
 
       {orders.length === 0 && (
-        <div className="text-center py-16 text-gray-400">No active orders</div>
+        <div className="text-center py-16 text-gray-400">{t('orderQueue.noActiveOrders')}</div>
       )}
 
       {/* By dish: a cooking checklist across every open order. Statuses are not
@@ -151,8 +161,7 @@ export default function OrderQueue() {
       {view === VIEWS.BY_ITEM && orders.length > 0 && (
         <div className="space-y-3">
           <p className="text-sm text-gray-500">
-            Every open order combined, so one batch covers several tables. Advance
-            orders from any other view.
+            {t('orderQueue.byItemNote')}
           </p>
           {dishes.map(dish => (
             <div key={dish.key} className="bg-brand-surface rounded-xl shadow p-4">
@@ -168,12 +177,12 @@ export default function OrderQueue() {
               )}
               {dish.item.ingredients.filter(i => i.included).length > 0 && (
                 <p className="text-sm text-gray-500">
-                  With: {dish.item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
+                  {t('common.withPrefix')}: {dish.item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
                 </p>
               )}
               {dish.item.ingredients.filter(i => !i.included).length > 0 && (
                 <p className="text-sm text-red-500">
-                  NO: {dish.item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
+                  {t('common.noPrefix')}: {dish.item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
                 </p>
               )}
 
@@ -183,7 +192,7 @@ export default function OrderQueue() {
                     key={order.id}
                     className="text-xs font-semibold bg-gray-100 text-gray-700 rounded-full px-2.5 py-1"
                   >
-                    {order.table_label || 'Takeaway'} · {order.order_number}
+                    {order.table_label || t('common.takeaway')} · {order.order_number}
                     {quantity > 1 && ` ×${quantity}`}
                   </span>
                 ))}
@@ -202,7 +211,7 @@ export default function OrderQueue() {
                 {order.table_label ? (
                   <p className="font-bold text-2xl text-brand-text leading-tight">{order.table_label}</p>
                 ) : (
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Takeaway</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('common.takeaway')}</p>
                 )}
                 <p className="font-bold text-lg text-brand-text">{order.order_number}</p>
                 <p className="text-gray-600">{order.customer_name}</p>
@@ -226,12 +235,12 @@ export default function OrderQueue() {
                   </p>
                   {item.ingredients.filter(i => i.included).length > 0 && (
                     <p className="text-gray-500">
-                      With: {item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
+                      {t('common.withPrefix')}: {item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
                     </p>
                   )}
                   {item.ingredients.filter(i => !i.included).length > 0 && (
                     <p className="text-red-500">
-                      NO: {item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
+                      {t('common.noPrefix')}: {item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
                     </p>
                   )}
                   {item.options.length > 0 && (

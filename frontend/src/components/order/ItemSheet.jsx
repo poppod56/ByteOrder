@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import BottomSheet from '../BottomSheet'
 import { formatMoney } from '../../lib/money'
 
@@ -13,6 +14,7 @@ function minimumOf(group) {
 }
 
 export default function ItemSheet({ item, currency, imageUrl, onClose, onAdd }) {
+  const { t } = useTranslation()
   const [quantity, setQuantity] = useState(1)
   const [included, setIncluded] = useState({})
   const [chosen, setChosen] = useState({})
@@ -90,7 +92,7 @@ export default function ItemSheet({ item, currency, imageUrl, onClose, onAdd }) 
         <>
           {unmet.length > 0 && (
             <p className="text-sm text-gray-500 mb-2 text-center">
-              Please choose: {unmet.map(g => g.name).join(', ')}
+              {t('itemSheet.pleaseChoose', { groups: unmet.map(g => g.name).join(', ') })}
             </p>
           )}
           <button
@@ -98,7 +100,7 @@ export default function ItemSheet({ item, currency, imageUrl, onClose, onAdd }) 
             disabled={unmet.length > 0}
             className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-lg flex items-center justify-center gap-2"
           >
-            <span>Add {quantity} to cart</span>
+            <span>{t('itemSheet.addToCart', { count: quantity })}</span>
             {lineTotal !== null && <span className="opacity-80">· {formatMoney(lineTotal, currency)}</span>}
           </button>
         </>
@@ -130,11 +132,11 @@ export default function ItemSheet({ item, currency, imageUrl, onClose, onAdd }) 
           <div key={group.id} className="mb-5">
             <div className="flex items-baseline justify-between mb-1">
               <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{group.name}</h3>
-              {minimum > 0 && <span className="text-xs font-semibold text-brand-600">Required</span>}
+              {minimum > 0 && <span className="text-xs font-semibold text-brand-600">{t('itemSheet.required')}</span>}
             </div>
             <p className="text-xs text-gray-400 mb-2">
-              {cap === 1 ? 'Choose one' : `Choose up to ${cap}`}
-              {minimum > 1 && ` — at least ${minimum}`}
+              {cap === 1 ? t('itemSheet.chooseOne') : t('itemSheet.chooseUpTo', { count: cap })}
+              {minimum > 1 && ` — ${t('itemSheet.atLeast', { count: minimum })}`}
             </p>
             <div className="flex flex-wrap gap-2">
               {group.options.map(option => {
@@ -166,7 +168,7 @@ export default function ItemSheet({ item, currency, imageUrl, onClose, onAdd }) 
 
       {item.item_ingredients?.length > 0 && (
         <div className="mb-5">
-          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">Toppings</h3>
+          <h3 className="text-sm font-semibold text-gray-500 uppercase tracking-wide mb-2">{t('itemSheet.toppings')}</h3>
           <div className="flex flex-wrap gap-2">
             {item.item_ingredients.map(ii => {
               const on = !!included[ii.ingredient.id]
@@ -188,10 +190,10 @@ export default function ItemSheet({ item, currency, imageUrl, onClose, onAdd }) 
       )}
 
       <div className="flex items-center justify-between py-2">
-        <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">Quantity</span>
+        <span className="text-sm font-semibold text-gray-500 uppercase tracking-wide">{t('itemSheet.quantity')}</span>
         <div className="flex items-center gap-4">
           <button
-            aria-label="Fewer"
+            aria-label={t('order.fewer')}
             onClick={() => setQuantity(q => Math.max(1, q - 1))}
             disabled={quantity <= 1}
             className="w-11 h-11 rounded-full border-2 border-gray-200 text-xl font-bold text-gray-600 disabled:text-gray-300"
@@ -200,7 +202,7 @@ export default function ItemSheet({ item, currency, imageUrl, onClose, onAdd }) 
           </button>
           <span className="text-xl font-bold w-8 text-center" data-testid="quantity">{quantity}</span>
           <button
-            aria-label="More"
+            aria-label={t('order.more')}
             onClick={() => setQuantity(q => Math.min(99, q + 1))}
             disabled={quantity >= 99}
             className="w-11 h-11 rounded-full border-2 border-brand-600 text-xl font-bold text-brand-600 disabled:opacity-40"

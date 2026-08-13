@@ -1,5 +1,11 @@
 @import "tailwindcss";
 
+/* Thai glyphs only — the unicode-range on each face means Latin text keeps
+   using the system sans font below; this only kicks in for Thai characters. */
+@import "@fontsource/noto-sans-thai/400.css";
+@import "@fontsource/noto-sans-thai/500.css";
+@import "@fontsource/noto-sans-thai/700.css";
+
 /* Brand colour tokens — override at runtime to retheme everything */
 :root {
   --brand-primary: #ea580c;
@@ -17,6 +23,13 @@
   --brand-bg:      #f9fafb;  /* default: Tailwind gray-50  */
   --brand-surface: #ffffff;  /* default: white             */
   --brand-text:    #111827;  /* default: Tailwind gray-900 */
+}
+
+/* Thai tone marks and vowels stack above/below the letter, so the default
+   line-height clips them — loosen it a touch for everyone, Latin text included. */
+body {
+  font-family: "Noto Sans Thai", ui-sans-serif, system-ui, sans-serif;
+  line-height: 1.6;
 }
 
 @layer utilities {

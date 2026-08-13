@@ -1,10 +1,12 @@
 import { useState, useEffect, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { QRCodeSVG } from 'qrcode.react'
+import { useTranslation } from 'react-i18next'
 import { orderApi, menuApi } from '../lib/api'
 import { useKitchen } from '../contexts/KitchenContext'
 
 export default function Home() {
+  const { t } = useTranslation()
   const { kitchenId, slug } = useKitchen()
   const [queue, setQueue] = useState([])
   const [kitchenName, setKitchenName] = useState('ByteOrder Kitchen')
@@ -61,7 +63,11 @@ export default function Home() {
     in_progress: 'bg-blue-500',
     ready: 'bg-green-500',
   }
-  const STATUS_LABELS = { pending: 'Waiting', in_progress: 'Cooking', ready: 'Ready!' }
+  const STATUS_LABELS = {
+    pending: t('home.status.pending'),
+    in_progress: t('home.status.in_progress'),
+    ready: t('home.status.ready'),
+  }
 
   return (
     <div className="min-h-screen bg-brand-50 flex flex-col items-center justify-center px-4 py-10">
@@ -69,19 +75,19 @@ export default function Home() {
         ? <img src={logo} alt={kitchenName} className="h-20 w-auto object-contain mb-3" />
         : <h1 className="text-4xl font-extrabold text-brand-600 mb-1 tracking-tight">{kitchenName}</h1>
       }
-      <p className="text-gray-500 mb-10 text-lg">Scan to order from your phone</p>
+      <p className="text-gray-500 mb-10 text-lg">{t('home.scanToOrder')}</p>
 
       <div className="bg-brand-surface rounded-2xl shadow-xl p-6 mb-10">
         <QRCodeSVG value={orderUrl} size={220} fgColor={brandColor} />
         <p className="text-center text-sm text-gray-400 mt-3">
-          or <Link to={`${basePath}/order`} className="text-brand-600 underline">tap here</Link> to order
+          {t('home.tapHerePrefix')} <Link to={`${basePath}/order`} className="text-brand-600 underline">{t('home.tapHere')}</Link> {t('home.tapHereSuffix')}
         </p>
       </div>
 
       <div className="w-full max-w-md">
-        <h2 className="text-xl font-bold text-gray-800 mb-3">Live Queue</h2>
+        <h2 className="text-xl font-bold text-gray-800 mb-3">{t('home.liveQueue')}</h2>
         {queue.length === 0 ? (
-          <p className="text-gray-400 text-center py-4">No active orders — be the first!</p>
+          <p className="text-gray-400 text-center py-4">{t('home.noActiveOrders')}</p>
         ) : (
           <div className="space-y-2">
             {queue.map(order => (
@@ -104,13 +110,13 @@ export default function Home() {
           to={`${basePath}/order`}
           className="bg-brand-600 hover:bg-brand-700 text-white font-bold px-8 py-3 rounded-xl text-lg shadow transition-colors"
         >
-          Place Order
+          {t('home.placeOrder')}
         </Link>
         <Link
           to={`${basePath}/track`}
           className="bg-white hover:bg-gray-50 text-brand-600 font-bold px-8 py-3 rounded-xl text-lg shadow border border-brand-200 transition-colors"
         >
-          Track Order
+          {t('home.trackOrder')}
         </Link>
       </div>
     </div>

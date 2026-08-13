@@ -1,0 +1,108 @@
+{
+  "common": {
+    "kitchenNotFound": "ไม่พบร้าน",
+    "checkUrlAndTryAgain": "ตรวจสอบ URL แล้วลองใหม่อีกครั้ง",
+    "welcome": "ยินดีต้อนรับสู่ ByteOrder",
+    "scanAtYourTable": "สแกน QR โค้ดที่โต๊ะของคุณเพื่อสั่งอาหาร"
+  },
+  "home": {
+    "scanToOrder": "สแกนเพื่อสั่งอาหารจากมือถือของคุณ",
+    "tapHerePrefix": "หรือ",
+    "tapHere": "แตะที่นี่",
+    "tapHereSuffix": "เพื่อสั่งอาหาร",
+    "liveQueue": "คิวปัจจุบัน",
+    "noActiveOrders": "ยังไม่มีออเดอร์ — เป็นคนแรกเลย!",
+    "status": {
+      "pending": "รอคิว",
+      "in_progress": "กำลังทำ",
+      "ready": "พร้อมแล้ว!"
+    },
+    "placeOrder": "สั่งอาหาร",
+    "trackOrder": "ติดตามออเดอร์"
+  },
+  "order": {
+    "menuCategories": "หมวดหมู่เมนู",
+    "unknownTableCode": "เราไม่พบรหัสโต๊ะนี้ — กรุณาสั่งแบบซื้อกลับ หรือสอบถามพนักงาน",
+    "tableRotatedTitle": "โต๊ะนี้มี QR โค้ดใหม่แล้ว",
+    "tableRotatedBody": "สแกนสติกเกอร์ที่โต๊ะของคุณอีกครั้งเพื่อสั่งสำหรับ {{table}} หรือเก็บออเดอร์นี้ไว้และมารับด้วยตัวเอง",
+    "tableRotatedBodyGeneric": "โต๊ะของคุณ",
+    "keepAsTakeaway": "เก็บออเดอร์นี้ไว้แบบซื้อกลับ",
+    "menuEmpty": "ขณะนี้ยังไม่มีเมนู",
+    "yourCart": "ตะกร้าของคุณ",
+    "cartEmpty": "ยังไม่มีอะไรในตะกร้า",
+    "browseMenu": "ดูเมนู",
+    "noPrefix": "ไม่ใส่",
+    "eachSuffix": "ต่อชิ้น",
+    "total": "ยอดรวม",
+    "yourName": "ชื่อของคุณ",
+    "namePlaceholder": "เพื่อให้เราเรียกคุณเมื่อพร้อม",
+    "placing": "กำลังส่งออเดอร์…",
+    "placeOrder": "สั่งอาหาร",
+    "placeOrderFailed": "ไม่สามารถสั่งอาหารได้ กรุณาลองใหม่อีกครั้ง",
+    "ordersForTable": "ออเดอร์สำหรับ {{table}}",
+    "yourOrders": "ออเดอร์ของคุณ",
+    "tableOrdersSubtitle": "ทุกออเดอร์ที่สั่งที่โต๊ะนี้วันนี้",
+    "myOrdersSubtitle": "ออเดอร์ที่สั่งจากเครื่องนี้",
+    "ordersEmpty": "ยังไม่มีการสั่งอาหาร",
+    "orderLineSummary": "{{quantity}}x {{name}}",
+    "queuePosition": "อันดับที่ #{{position}} ในคิว",
+    "fewer": "ลดจำนวน",
+    "more": "เพิ่มจำนวน",
+    "fewerItem": "ลดจำนวน {{name}}",
+    "moreItem": "เพิ่มจำนวน {{name}}",
+    "navMenu": "เมนู",
+    "navCart": "ตะกร้า",
+    "navOrders": "ออเดอร์",
+    "navSections": "ส่วนต่างๆ",
+    "status": {
+      "pending": "อยู่ในคิว",
+      "in_progress": "กำลังเตรียม",
+      "ready": "พร้อมแล้ว",
+      "completed": "เสร็จสิ้น"
+    }
+  },
+  "itemSheet": {
+    "close": "ปิด",
+    "pleaseChoose": "กรุณาเลือก: {{groups}}",
+    "addToCart": "เพิ่ม {{count}} ลงตะกร้า",
+    "required": "จำเป็นต้องเลือก",
+    "chooseOne": "เลือกได้ 1 อย่าง",
+    "chooseUpTo": "เลือกได้สูงสุด {{count}} อย่าง",
+    "atLeast": "อย่างน้อย {{count}}",
+    "toppings": "ท็อปปิ้ง",
+    "quantity": "จำนวน"
+  },
+  "track": {
+    "header": "ติดตามออเดอร์",
+    "findYourOrder": "ค้นหาออเดอร์ของคุณ",
+    "lookupPlaceholder": "กรอกรหัสติดตามออเดอร์ของคุณ",
+    "track": "ติดตาม",
+    "orderNotFound": "ไม่พบออเดอร์ ตรวจสอบหมายเลขออเดอร์ของคุณ",
+    "tryAgain": "ลองใหม่อีกครั้ง",
+    "loading": "กำลังโหลด…",
+    "yourOrder": "ออเดอร์ของคุณ",
+    "withPrefix": "ใส่",
+    "noPrefix": "ไม่ใส่",
+    "queuePosition": "คุณอยู่อันดับที่ #{{position}} ในคิว",
+    "orderMoreFor": "สั่งเพิ่มสำหรับ {{table}}",
+    "placeAnotherOrder": "สั่งอาหารอีกครั้ง",
+    "status": {
+      "pending": "รับออเดอร์แล้ว",
+      "in_progress": "กำลังเตรียมอาหาร",
+      "readyTable": "กำลังนำไปเสิร์ฟ!",
+      "readyTakeaway": "พร้อมรับแล้ว!"
+    },
+    "description": {
+      "pendingTable": "ออเดอร์ของคุณอยู่ในคิว เราจะนำไปเสิร์ฟที่ {{table}}",
+      "pendingTakeaway": "ออเดอร์ของคุณอยู่ในคิว รอสักครู่นะ!",
+      "inProgress": "เชฟกำลังทำออเดอร์ของคุณอยู่",
+      "readyTable": "ออเดอร์ของคุณกำลังไปที่ {{table}}!",
+      "readyTakeaway": "ออเดอร์ของคุณพร้อมแล้ว — มารับได้เลย!"
+    },
+    "notification": {
+      "title": "ออเดอร์ของคุณพร้อมแล้ว!",
+      "bodyTable": "กำลังนำไปที่ {{table}}!",
+      "bodyTakeaway": "มารับออเดอร์ของคุณได้เลย!"
+    }
+  }
+}

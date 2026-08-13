@@ -1,7 +1,9 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../lib/api'
 
 export default function Ingredients() {
+  const { t } = useTranslation()
   const [ingredients, setIngredients] = useState([])
   const [newName, setNewName] = useState('')
 
@@ -25,14 +27,14 @@ export default function Ingredients() {
   }
 
   async function remove(ing) {
-    if (!confirm(`Delete ingredient "${ing.name}"? It will be removed from all menu items.`)) return
+    if (!confirm(t('ingredients.confirmDelete', { name: ing.name }))) return
     await api.delete(`/menu/ingredients/${ing.id}`)
     load()
   }
 
   return (
     <div className="max-w-lg">
-      <h1 className="text-2xl font-bold text-brand-text mb-4">Ingredients</h1>
+      <h1 className="text-2xl font-bold text-brand-text mb-4">{t('ingredients.title')}</h1>
 
       <div className="bg-brand-surface rounded-xl shadow divide-y">
         {ingredients.map(ing => (
@@ -42,16 +44,16 @@ export default function Ingredients() {
             </span>
             <div className="flex gap-3">
               <button onClick={() => toggle(ing)} className="text-sm text-gray-500 hover:text-gray-800">
-                {ing.active ? 'Disable' : 'Enable'}
+                {ing.active ? t('ingredients.disable') : t('ingredients.enable')}
               </button>
               <button onClick={() => remove(ing)} className="text-sm text-red-500 hover:text-red-700">
-                Delete
+                {t('ingredients.delete')}
               </button>
             </div>
           </div>
         ))}
         {ingredients.length === 0 && (
-          <p className="px-4 py-6 text-gray-400 text-center">No ingredients yet</p>
+          <p className="px-4 py-6 text-gray-400 text-center">{t('ingredients.empty')}</p>
         )}
       </div>
 
@@ -60,14 +62,14 @@ export default function Ingredients() {
           value={newName}
           onChange={e => setNewName(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && add()}
-          placeholder="New ingredient name"
+          placeholder={t('ingredients.namePlaceholder')}
           className="flex-1 border rounded-lg px-3 py-2"
         />
         <button
           onClick={add}
           className="bg-brand-600 hover:bg-brand-700 text-white rounded-lg px-4 py-2 font-medium"
         >
-          Add
+          {t('ingredients.add')}
         </button>
       </div>
     </div>

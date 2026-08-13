@@ -9,7 +9,16 @@ from app.auth import get_kitchen_id
 
 router = APIRouter(prefix="/settings", tags=["settings"])
 
-ALLOWED_KEYS = {"printer_url", "kitchen_name", "frontend_url", "logo", "brand_primary", "brand_bg", "brand_surface", "brand_text", "currency"}
+ALLOWED_KEYS = {"printer_url", "kitchen_name", "frontend_url", "logo", "brand_primary", "brand_bg", "brand_surface", "brand_text", "currency", "default_language"}
+
+# Kept in lockstep with the locales shipped in frontend/admin/print-service —
+# an unsupported code here would silently fall back to English everywhere.
+SUPPORTED_LANGUAGES = {"en", "th"}
+
+
+def _validate_default_language(value: str) -> None:
+    if value not in SUPPORTED_LANGUAGES:
+        raise HTTPException(status_code=400, detail=f"default_language must be one of {sorted(SUPPORTED_LANGUAGES)}")
 
 # Hosts that must never be used as printer targets (internal service names + metadata endpoints)
 _BLOCKED_PRINTER_HOSTS = {
@@ -83,6 +92,8 @@ def upsert_setting(key: str, data: schemas.SettingIn, db: Session = Depends(get_
         _validate_printer_url(data.value)
     if key == "frontend_url" and data.value:
         _validate_frontend_url(data.value)
+    if key == "default_language" and data.value:
+        _validate_default_language(data.value)
     setting = db.query(models.Setting).filter(models.Setting.kitchen_id == kitchen_id, models.Setting.key == key).first()
     if setting:
         setting.value = data.value

@@ -1,5 +1,6 @@
 import { useState, useEffect, useMemo, useRef } from 'react'
 import { useSearchParams, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { menuApi, orderApi } from '../lib/api'
 import { useKitchen } from '../contexts/KitchenContext'
 import { formatMoney, lineTotalOf, unitPriceOf, cartTotalOf } from '../lib/money'
@@ -34,12 +35,6 @@ function lineKey(line) {
   return `${line.menu_item_id}|${toppings}|${options}`
 }
 
-const STATUS_LABELS = {
-  pending: 'In the queue',
-  in_progress: 'Being prepared',
-  ready: 'Ready',
-  completed: 'Done',
-}
 const STATUS_STYLES = {
   pending: 'bg-yellow-100 text-yellow-800',
   in_progress: 'bg-blue-100 text-blue-800',
@@ -48,7 +43,14 @@ const STATUS_STYLES = {
 }
 
 export default function Order() {
+  const { t } = useTranslation()
   const { kitchenId, slug } = useKitchen()
+  const STATUS_LABELS = {
+    pending: t('order.status.pending'),
+    in_progress: t('order.status.in_progress'),
+    ready: t('order.status.ready'),
+    completed: t('order.status.completed'),
+  }
   const [searchParams] = useSearchParams()
   const tableCode = searchParams.get('t')
 
@@ -221,7 +223,7 @@ export default function Order() {
       if (err.response?.data?.detail?.code === 'unknown_table') {
         setTableRotated(true)
       } else {
-        alert('Failed to place order. Please try again.')
+        alert(t('order.placeOrderFailed'))
       }
     } finally {
       setSubmitting(false)
@@ -255,7 +257,7 @@ export default function Order() {
       </header>
 
       {view === VIEWS.MENU && visibleCategories.length > 0 && (
-        <nav aria-label="Menu categories" className="sticky top-13 z-20 bg-brand-surface border-b border-gray-100 overflow-x-auto">
+        <nav aria-label={t('order.menuCategories')} className="sticky top-13 z-20 bg-brand-surface border-b border-gray-100 overflow-x-auto">
           <div className="flex gap-1 px-2">
             {visibleCategories.map(category => (
               <button
@@ -277,22 +279,21 @@ export default function Order() {
       <div className="max-w-lg mx-auto px-4 py-4">
         {tableError && (
           <p className="bg-yellow-50 border border-yellow-200 text-yellow-800 text-sm rounded-xl px-4 py-3 mb-4">
-            We couldn't recognise that table code — please order as a takeaway, or ask a member of staff.
+            {t('order.unknownTableCode')}
           </p>
         )}
 
         {tableRotated && (
           <div className="bg-red-50 border border-red-200 text-red-800 text-sm rounded-xl px-4 py-3 mb-4">
-            <p className="font-semibold mb-1">This table has a new QR code</p>
+            <p className="font-semibold mb-1">{t('order.tableRotatedTitle')}</p>
             <p className="mb-3">
-              Scan the sticker on your table again to order for {table?.label || 'your table'}. Or keep
-              this order and collect it yourself.
+              {t('order.tableRotatedBody', { table: table?.label || t('order.tableRotatedBodyGeneric') })}
             </p>
             <button
               onClick={continueAsTakeaway}
               className="bg-red-600 hover:bg-red-700 text-white font-semibold px-4 py-2 rounded-lg"
             >
-              Keep my order as a takeaway
+              {t('order.keepAsTakeaway')}
             </button>
           </div>
         )}
@@ -300,7 +301,7 @@ export default function Order() {
         {/* ── Menu ─────────────────────────────────────────────────────────── */}
         {view === VIEWS.MENU && (
           visibleCategories.length === 0 ? (
-            <p className="text-gray-400 text-center py-16">The menu is empty right now.</p>
+            <p className="text-gray-400 text-center py-16">{t('order.menuEmpty')}</p>
           ) : (
             visibleCategories.map(category => (
               <section
@@ -349,12 +350,12 @@ export default function Order() {
         {/* ── Cart ─────────────────────────────────────────────────────────── */}
         {view === VIEWS.CART && (
           <div>
-            <h2 className="text-xl font-bold text-brand-text mb-4">Your cart</h2>
+            <h2 className="text-xl font-bold text-brand-text mb-4">{t('order.yourCart')}</h2>
             {cart.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-400 mb-4">Nothing in the cart yet.</p>
+                <p className="text-gray-400 mb-4">{t('order.cartEmpty')}</p>
                 <button onClick={() => setView(VIEWS.MENU)} className="text-brand-600 font-semibold underline">
-                  Browse the menu
+                  {t('order.browseMenu')}
                 </button>
               </div>
             ) : (
@@ -382,14 +383,14 @@ export default function Order() {
                       )}
                       {line.ingredients.filter(i => !i.included).length > 0 && (
                         <p className="text-sm text-red-400">
-                          No {line.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
+                          {t('order.noPrefix')} {line.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
                         </p>
                       )}
 
                       <div className="flex items-center justify-between mt-2">
                         <div className="flex items-center gap-3">
                           <button
-                            aria-label={`Fewer ${line.menu_item_name}`}
+                            aria-label={t('order.fewerItem', { name: line.menu_item_name })}
                             onClick={() => setLineQuantity(index, line.quantity - 1)}
                             className="w-9 h-9 rounded-full border-2 border-gray-200 font-bold text-gray-600"
                           >
@@ -397,7 +398,7 @@ export default function Order() {
                           </button>
                           <span className="font-bold w-6 text-center">{line.quantity}</span>
                           <button
-                            aria-label={`More ${line.menu_item_name}`}
+                            aria-label={t('order.moreItem', { name: line.menu_item_name })}
                             onClick={() => setLineQuantity(index, line.quantity + 1)}
                             className="w-9 h-9 rounded-full border-2 border-brand-600 font-bold text-brand-600"
                           >
@@ -406,7 +407,7 @@ export default function Order() {
                         </div>
                         {unitPriceOf(line) !== null && line.quantity > 1 && (
                           <p className="text-xs text-gray-400">
-                            {formatMoney(unitPriceOf(line), currency)} each
+                            {formatMoney(unitPriceOf(line), currency)} {t('order.eachSuffix')}
                           </p>
                         )}
                       </div>
@@ -416,7 +417,7 @@ export default function Order() {
 
                 {cartTotal !== null && (
                   <div className="flex justify-between items-baseline mb-6 px-1">
-                    <span className="text-lg font-bold text-brand-text">Total</span>
+                    <span className="text-lg font-bold text-brand-text">{t('order.total')}</span>
                     <span className="text-2xl font-extrabold text-brand-text">
                       {formatMoney(cartTotal, currency)}
                     </span>
@@ -428,13 +429,13 @@ export default function Order() {
                 {!table && (
                   <div className="mb-4">
                     <label htmlFor="customer-name" className="block text-sm font-medium text-gray-700 mb-1">
-                      Your name
+                      {t('order.yourName')}
                     </label>
                     <input
                       id="customer-name"
                       value={name}
                       onChange={e => setName(e.target.value)}
-                      placeholder="So we can call you when it's ready"
+                      placeholder={t('order.namePlaceholder')}
                       className="w-full border-2 border-gray-200 focus:border-brand-500 rounded-xl px-4 py-3 outline-none"
                     />
                   </div>
@@ -445,7 +446,7 @@ export default function Order() {
                   disabled={submitting || needsName}
                   className="w-full bg-brand-600 hover:bg-brand-700 disabled:opacity-40 text-white font-bold py-3.5 rounded-xl text-lg"
                 >
-                  {submitting ? 'Placing…' : 'Place order'}
+                  {submitting ? t('order.placing') : t('order.placeOrder')}
                 </button>
               </>
             )}
@@ -456,19 +457,19 @@ export default function Order() {
         {view === VIEWS.ORDERS && (
           <div>
             <h2 className="text-xl font-bold text-brand-text mb-1">
-              {table ? `Orders for ${table.label}` : 'Your orders'}
+              {table ? t('order.ordersForTable', { table: table.label }) : t('order.yourOrders')}
             </h2>
             <p className="text-sm text-gray-500 mb-4">
               {table
-                ? 'Everything ordered at this table today.'
-                : 'Orders placed on this device.'}
+                ? t('order.tableOrdersSubtitle')
+                : t('order.myOrdersSubtitle')}
             </p>
 
             {myOrders.length === 0 ? (
               <div className="text-center py-12">
-                <p className="text-gray-400 mb-4">Nothing ordered yet.</p>
+                <p className="text-gray-400 mb-4">{t('order.ordersEmpty')}</p>
                 <button onClick={() => setView(VIEWS.MENU)} className="text-brand-600 font-semibold underline">
-                  Browse the menu
+                  {t('order.browseMenu')}
                 </button>
               </div>
             ) : (
@@ -486,7 +487,7 @@ export default function Order() {
                       </span>
                     </div>
                     <p className="text-sm text-gray-500">
-                      {order.items.map(i => `${i.quantity}x ${i.menu_item_name}`).join(', ')}
+                      {order.items.map(i => t('order.orderLineSummary', { quantity: i.quantity, name: i.menu_item_name })).join(', ')}
                     </p>
                     {order.total !== null && order.total !== undefined && (
                       <p className="text-sm font-semibold text-brand-text mt-1">
@@ -495,7 +496,7 @@ export default function Order() {
                     )}
                     {order.queue_position && order.status === 'pending' && (
                       <p className="text-xs text-brand-600 font-semibold mt-1">
-                        #{order.queue_position} in the queue
+                        {t('order.queuePosition', { position: order.queue_position })}
                       </p>
                     )}
                   </Link>
@@ -507,11 +508,11 @@ export default function Order() {
       </div>
 
       {/* ── Bottom navigation ─────────────────────────────────────────────── */}
-      <nav aria-label="Sections" className="fixed bottom-0 inset-x-0 z-30 bg-brand-surface border-t border-gray-200 flex">
+      <nav aria-label={t('order.navSections')} className="fixed bottom-0 inset-x-0 z-30 bg-brand-surface border-t border-gray-200 flex">
         {[
-          { key: VIEWS.MENU, label: 'Menu', icon: '🍽', badge: 0 },
-          { key: VIEWS.CART, label: 'Cart', icon: '🛒', badge: cartCount },
-          { key: VIEWS.ORDERS, label: 'Orders', icon: '📋', badge: activeOrderCount },
+          { key: VIEWS.MENU, label: t('order.navMenu'), icon: '🍽', badge: 0 },
+          { key: VIEWS.CART, label: t('order.navCart'), icon: '🛒', badge: cartCount },
+          { key: VIEWS.ORDERS, label: t('order.navOrders'), icon: '📋', badge: activeOrderCount },
         ].map(tab => (
           <button
             key={tab.key}

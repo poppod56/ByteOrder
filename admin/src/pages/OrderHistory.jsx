@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../lib/api'
 
 function todayStr() {
@@ -11,6 +12,7 @@ function todayStr() {
 }
 
 export default function OrderHistory() {
+  const { t } = useTranslation()
   const [orders, setOrders] = useState([])
   const [loading, setLoading] = useState(true)
   const [date, setDate] = useState(todayStr())
@@ -32,7 +34,7 @@ export default function OrderHistory() {
   return (
     <div>
       <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-brand-text">Order History</h1>
+        <h1 className="text-2xl font-bold text-brand-text">{t('orderHistory.title')}</h1>
         <input
           type="date"
           value={date}
@@ -41,10 +43,10 @@ export default function OrderHistory() {
         />
       </div>
 
-      {loading && <p className="text-gray-500">Loading…</p>}
+      {loading && <p className="text-gray-500">{t('orderHistory.loading')}</p>}
 
       {!loading && orders.length === 0 && (
-        <div className="text-center py-16 text-gray-400">No completed orders for this date</div>
+        <div className="text-center py-16 text-gray-400">{t('orderHistory.empty')}</div>
       )}
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -55,7 +57,7 @@ export default function OrderHistory() {
                 {order.table_label ? (
                   <p className="font-bold text-xl text-brand-text leading-tight">{order.table_label}</p>
                 ) : (
-                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Takeaway</p>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">{t('common.takeaway')}</p>
                 )}
                 <p className="font-bold text-lg text-brand-text">{order.order_number}</p>
                 <p className="text-gray-600">{order.customer_name}</p>
@@ -71,12 +73,12 @@ export default function OrderHistory() {
                   <p className="font-medium text-gray-800">{item.menu_item_name}</p>
                   {item.ingredients.filter(i => i.included).length > 0 && (
                     <p className="text-gray-500">
-                      With: {item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
+                      {t('common.withPrefix')}: {item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
                     </p>
                   )}
                   {item.ingredients.filter(i => !i.included).length > 0 && (
                     <p className="text-red-500">
-                      NO: {item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
+                      {t('common.noPrefix')}: {item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
                     </p>
                   )}
                   {item.options.length > 0 && (

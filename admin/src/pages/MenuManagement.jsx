@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '../lib/api'
 import ItemImageField from '../components/menu/ItemImageField'
 import PriceField from '../components/menu/PriceField'
 import { formatMoney, parseMoney } from '../lib/money'
 
 function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOption, onDeleteOption }) {
+  const { t } = useTranslation()
   const [newGroupName, setNewGroupName] = useState('')
   const [newGroupRequired, setNewGroupRequired] = useState(false)
   const [newGroupMax, setNewGroupMax] = useState(1)
@@ -37,14 +39,14 @@ function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOpt
             <div>
               <span className="text-sm font-medium text-gray-800">{group.name}</span>
               <span className="ml-2 text-xs text-gray-500">
-                {group.required ? 'Required' : 'Optional'} · max {group.max_select}
+                {group.required ? t('menuManagement.required') : t('menuManagement.optional')} · {t('menuManagement.maxSuffix', { count: group.max_select })}
               </span>
             </div>
             <button
               onClick={() => onDelete(itemId, group.id)}
               className="text-xs text-red-500 hover:text-red-700"
             >
-              Delete group
+              {t('menuManagement.deleteGroup')}
             </button>
           </div>
 
@@ -71,7 +73,7 @@ function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOpt
             <input
               value={newOptionName[group.id] || ''}
               onChange={e => setNewOptionName(prev => ({ ...prev, [group.id]: e.target.value }))}
-              placeholder="New option"
+              placeholder={t('menuManagement.newOptionPlaceholder')}
               className="flex-1 min-w-0 border rounded px-2 py-1 text-xs"
             />
             <input
@@ -79,7 +81,7 @@ function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOpt
               onChange={e => setNewOptionPrice(prev => ({ ...prev, [group.id]: e.target.value }))}
               placeholder={`+ ${currency}`}
               inputMode="decimal"
-              aria-label={`Extra charge for a new ${group.name} option`}
+              aria-label={t('menuManagement.extraChargeFor', { group: group.name })}
               className="w-20 border rounded px-2 py-1 text-xs text-right"
             />
             <button type="submit" className="bg-brand-600 text-white rounded px-2 py-1 text-xs">+</button>
@@ -88,12 +90,12 @@ function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOpt
       ))}
 
       <form onSubmit={handleAddGroup} className="border rounded-lg p-3 bg-white space-y-2">
-        <p className="text-xs font-semibold text-gray-500">Add option group</p>
+        <p className="text-xs font-semibold text-gray-500">{t('menuManagement.addOptionGroup')}</p>
         <div className="flex gap-2">
           <input
             value={newGroupName}
             onChange={e => setNewGroupName(e.target.value)}
-            placeholder="Group name (e.g. Size)"
+            placeholder={t('menuManagement.groupNamePlaceholder')}
             className="flex-1 min-w-0 border rounded px-2 py-1 text-xs"
           />
           <label className="flex items-center gap-1 text-xs">
@@ -102,10 +104,10 @@ function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOpt
               checked={newGroupRequired}
               onChange={e => setNewGroupRequired(e.target.checked)}
             />
-            Required
+            {t('menuManagement.required')}
           </label>
           <label className="flex items-center gap-1 text-xs">
-            Max
+            {t('menuManagement.max')}
             <input
               type="number"
               min="1"
@@ -114,7 +116,7 @@ function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOpt
               className="w-12 border rounded px-1 py-1 text-xs"
             />
           </label>
-          <button type="submit" className="bg-brand-600 text-white rounded px-2 py-1 text-xs">Add</button>
+          <button type="submit" className="bg-brand-600 text-white rounded px-2 py-1 text-xs">{t('common.add')}</button>
         </div>
       </form>
     </div>
@@ -122,6 +124,7 @@ function OptionGroupsPanel({ itemId, groups, currency, onAdd, onDelete, onAddOpt
 }
 
 export default function MenuManagement() {
+  const { t } = useTranslation()
   const [categories, setCategories] = useState([])
   const [ingredients, setIngredients] = useState([])
   const [selected, setSelected] = useState(null) // selected category
@@ -210,7 +213,7 @@ export default function MenuManagement() {
   }
 
   async function deleteItem(item) {
-    if (!confirm(`Delete "${item.name}"?`)) return
+    if (!confirm(t('menuManagement.confirmDeleteItem', { name: item.name }))) return
     await api.delete(`/menu/items/${item.id}`)
     load()
   }
@@ -275,7 +278,7 @@ export default function MenuManagement() {
     <div className="flex gap-6 h-full">
       {/* Categories panel */}
       <div className="w-56 shrink-0">
-        <h2 className="text-lg font-bold text-brand-text mb-3">Categories</h2>
+        <h2 className="text-lg font-bold text-brand-text mb-3">{t('menuManagement.categories')}</h2>
         <div className="space-y-1 mb-4">
           {categories.map(cat => (
             <div
@@ -292,7 +295,7 @@ export default function MenuManagement() {
                 onClick={e => { e.stopPropagation(); toggleCategory(cat) }}
                 className="text-xs text-gray-400 hover:text-gray-700"
               >
-                {cat.active ? 'Hide' : 'Show'}
+                {cat.active ? t('menuManagement.hide') : t('menuManagement.show')}
               </button>
             </div>
           ))}
@@ -302,7 +305,7 @@ export default function MenuManagement() {
             value={newCatName}
             onChange={e => setNewCatName(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && addCategory()}
-            placeholder="New category"
+            placeholder={t('menuManagement.newCategoryPlaceholder')}
             className="flex-1 min-w-0 border rounded px-2 py-1 text-sm"
           />
           <button onClick={addCategory} className="bg-brand-600 text-white rounded px-2 py-1 text-sm">+</button>
@@ -312,10 +315,10 @@ export default function MenuManagement() {
       {/* Items panel */}
       <div className="flex-1">
         {!selected ? (
-          <p className="text-gray-400 mt-8 text-center">Select a category</p>
+          <p className="text-gray-400 mt-8 text-center">{t('menuManagement.selectCategory')}</p>
         ) : (
           <>
-            <h2 className="text-lg font-bold text-brand-text mb-3">{selected.name} — Items</h2>
+            <h2 className="text-lg font-bold text-brand-text mb-3">{t('menuManagement.itemsHeading', { category: selected.name })}</h2>
             <div className="space-y-3 mb-6">
               {selected.items?.map(item => (
                 <div key={item.id} className="bg-brand-surface rounded-lg shadow p-4">
@@ -335,10 +338,10 @@ export default function MenuManagement() {
                     </div>
                     <div className="flex gap-2">
                       <button onClick={() => toggleItem(item)} className="text-xs text-gray-500 hover:text-gray-800">
-                        {item.active ? 'Hide' : 'Show'}
+                        {item.active ? t('menuManagement.hide') : t('menuManagement.show')}
                       </button>
                       <button onClick={() => deleteItem(item)} className="text-xs text-red-500 hover:text-red-700">
-                        Delete
+                        {t('menuManagement.delete')}
                       </button>
                     </div>
                   </div>
@@ -349,12 +352,12 @@ export default function MenuManagement() {
                       value={item.price}
                       currency={currency}
                       onSave={price => saveItemPrice(item, price)}
-                      hint="Leave blank for no price"
+                      hint={t('menuManagement.priceHint')}
                     />
                   </div>
 
                   <div>
-                    <p className="text-xs font-semibold text-gray-500 mb-1">Ingredients</p>
+                    <p className="text-xs font-semibold text-gray-500 mb-1">{t('menuManagement.ingredientsHeading')}</p>
                     <div className="flex flex-wrap gap-2 mb-1">
                       {ingredients.map(ing => {
                         const linked = item.item_ingredients?.find(ii => ii.ingredient.id === ing.id)
@@ -367,7 +370,7 @@ export default function MenuManagement() {
                           <button
                             key={ing.id}
                             onClick={() => toggleIngredient(item, ing.id, linked)}
-                            title={!linked ? 'Click to add as optional topping' : linked.is_default ? 'Pre-selected — click to remove' : 'Optional topping — click to make pre-selected'}
+                            title={!linked ? t('menuManagement.chipTitleAdd') : linked.is_default ? t('menuManagement.chipTitleRemove') : t('menuManagement.chipTitleMakeDefault')}
                             className={`text-xs px-2 py-1 rounded-full border transition-colors ${chipClass}`}
                           >
                             {ing.name}
@@ -376,7 +379,7 @@ export default function MenuManagement() {
                       })}
                     </div>
                     <p className="text-xs text-gray-400">
-                      Gray = not added · <span className="text-brand-600">Outlined</span> = optional topping · <span className="text-brand-600 font-semibold">Filled</span> = pre-selected
+                      {t('menuManagement.chipLegendGray')} · <span className="text-brand-600">{t('menuManagement.chipLegendOutlined')}</span> {t('menuManagement.chipLegendOutlinedSuffix')} · <span className="text-brand-600 font-semibold">{t('menuManagement.chipLegendFilled')}</span> {t('menuManagement.chipLegendFilledSuffix')}
                     </p>
 
                     {/* Charged per unit and only when the topping is actually on
@@ -402,7 +405,7 @@ export default function MenuManagement() {
                       onClick={() => toggleOptions(item.id)}
                       className="text-xs font-semibold text-gray-500 hover:text-brand-600"
                     >
-                      Options {expandedOptions.has(item.id) ? '▲' : '▼'}
+                      {t('menuManagement.options')} {expandedOptions.has(item.id) ? '▲' : '▼'}
                     </button>
                     {expandedOptions.has(item.id) && (
                       <OptionGroupsPanel
@@ -421,33 +424,33 @@ export default function MenuManagement() {
             </div>
 
             <div className="bg-brand-surface rounded-lg shadow p-4">
-              <h3 className="text-sm font-semibold text-gray-700 mb-3">Add item to {selected.name}</h3>
+              <h3 className="text-sm font-semibold text-gray-700 mb-3">{t('menuManagement.addItemHeading', { category: selected.name })}</h3>
               <div className="flex gap-2">
                 <input
                   value={newItemName}
                   onChange={e => setNewItemName(e.target.value)}
-                  placeholder="Item name"
+                  placeholder={t('menuManagement.itemNamePlaceholder')}
                   className="flex-1 border rounded px-3 py-2 text-sm"
                 />
                 <input
                   value={newItemDesc}
                   onChange={e => setNewItemDesc(e.target.value)}
-                  placeholder="Description (optional)"
+                  placeholder={t('menuManagement.descriptionPlaceholder')}
                   className="flex-1 border rounded px-3 py-2 text-sm"
                 />
                 <input
                   value={newItemPrice}
                   onChange={e => setNewItemPrice(e.target.value)}
-                  placeholder={`Price (${currency})`}
+                  placeholder={t('menuManagement.pricePlaceholder', { currency })}
                   inputMode="decimal"
-                  aria-label="Price"
+                  aria-label={t('menuManagement.price')}
                   className="w-32 border rounded px-3 py-2 text-sm text-right"
                 />
                 <button
                   onClick={addItem}
                   className="bg-brand-600 text-white rounded px-4 py-2 text-sm font-medium"
                 >
-                  Add
+                  {t('common.add')}
                 </button>
               </div>
             </div>

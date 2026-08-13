@@ -1,35 +1,37 @@
 import { useState, useEffect, useRef } from 'react'
 import { useParams, useNavigate, useSearchParams, Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { orderApi } from '../lib/api'
 import { useKitchen } from '../contexts/KitchenContext'
 
 const STATUS_STEPS = ['pending', 'in_progress', 'ready']
-
-// Table orders are served where the customer is sitting, so the collection
-// wording is actively wrong for them — it sends a seated customer to a counter
-// while staff are carrying their food the other way.
-const statusLabels = tableLabel => ({
-  pending: 'Order received',
-  in_progress: 'Being prepared',
-  ready: tableLabel ? 'On its way!' : 'Ready to collect!',
-})
-const statusDescriptions = tableLabel => ({
-  pending: tableLabel
-    ? `Your order is in the queue. We'll bring it to ${tableLabel}.`
-    : 'Your order is in the queue. Sit tight!',
-  in_progress: 'The chef is working on your order now.',
-  ready: tableLabel
-    ? `Your order is on its way to ${tableLabel}!`
-    : 'Your order is ready — come and get it!',
-})
 const STATUS_EMOJI = { pending: '⏳', in_progress: '👨‍🍳', ready: '🎉' }
 
 export default function TrackOrder() {
+  const { t } = useTranslation()
   const { publicId } = useParams()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const tableCode = searchParams.get('t')
   const { kitchenId, slug } = useKitchen()
+
+  // Table orders are served where the customer is sitting, so the collection
+  // wording is actively wrong for them — it sends a seated customer to a counter
+  // while staff are carrying their food the other way.
+  const statusLabels = tableLabel => ({
+    pending: t('track.status.pending'),
+    in_progress: t('track.status.in_progress'),
+    ready: tableLabel ? t('track.status.readyTable') : t('track.status.readyTakeaway'),
+  })
+  const statusDescriptions = tableLabel => ({
+    pending: tableLabel
+      ? t('track.description.pendingTable', { table: tableLabel })
+      : t('track.description.pendingTakeaway'),
+    in_progress: t('track.description.inProgress'),
+    ready: tableLabel
+      ? t('track.description.readyTable', { table: tableLabel })
+      : t('track.description.readyTakeaway'),
+  })
   const [lookupId, setLookupId] = useState('')
   const [order, setOrder] = useState(null)
   const [status, setStatus] = useState(null)
@@ -60,7 +62,7 @@ export default function TrackOrder() {
       }
       subscribeToUpdates(id)
     } catch {
-      setError('Order not found. Check your order number.')
+      setError(t('track.orderNotFound'))
     }
   }
 
@@ -77,10 +79,10 @@ export default function TrackOrder() {
           const normalizedStatus = data.status === 'completed' ? 'ready' : data.status
           if (normalizedStatus === 'ready' && prevStatusRef.current !== 'ready') {
             if ('Notification' in window && window.isSecureContext && Notification.permission === 'granted') {
-              new Notification('Your order is ready!', {
+              new Notification(t('track.notification.title'), {
                 body: tableLabelRef.current
-                  ? `On its way to ${tableLabelRef.current}!`
-                  : 'Come and collect your order!',
+                  ? t('track.notification.bodyTable', { table: tableLabelRef.current })
+                  : t('track.notification.bodyTakeaway'),
               })
             }
           }
@@ -110,24 +112,24 @@ export default function TrackOrder() {
     <div className="min-h-screen bg-brand-bg">
       <header className="bg-brand-600 text-white px-4 py-4">
         <Link to={slug ? `/k/${slug}/` : '/'} className="text-white text-xl">←</Link>
-        <span className="text-xl font-bold ml-3">Track Order</span>
+        <span className="text-xl font-bold ml-3">{t('track.header')}</span>
       </header>
 
       <div className="max-w-lg mx-auto px-4 py-8">
         {!publicId ? (
           <form onSubmit={handleLookup}>
-            <h2 className="text-2xl font-bold text-brand-text mb-6">Find your order</h2>
+            <h2 className="text-2xl font-bold text-brand-text mb-6">{t('track.findYourOrder')}</h2>
             <input
               value={lookupId}
               onChange={e => setLookupId(e.target.value)}
-              placeholder="Enter your order tracking code"
+              placeholder={t('track.lookupPlaceholder')}
               className="w-full border-2 border-gray-200 focus:border-brand-500 rounded-xl px-4 py-3 text-lg outline-none mb-4"
             />
             <button
               type="submit"
               className="w-full bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-lg"
             >
-              Track
+              {t('track.track')}
             </button>
             {error && <p className="text-red-500 text-sm mt-3">{error}</p>}
           </form>
@@ -136,10 +138,10 @@ export default function TrackOrder() {
             {error ? (
               <div>
                 <p className="text-red-500 mb-4">{error}</p>
-                <Link to={slug ? `/k/${slug}/track` : '/track'} className="text-brand-600 underline">Try again</Link>
+                <Link to={slug ? `/k/${slug}/track` : '/track'} className="text-brand-600 underline">{t('track.tryAgain')}</Link>
               </div>
             ) : (
-              <p className="text-gray-400">Loading…</p>
+              <p className="text-gray-400">{t('track.loading')}</p>
             )}
           </div>
         ) : (
@@ -181,26 +183,26 @@ export default function TrackOrder() {
 
               {queuePos && status === 'pending' && (
                 <p className="text-center text-brand-600 font-bold mt-2">
-                  You are #{queuePos} in the queue
+                  {t('track.queuePosition', { position: queuePos })}
                 </p>
               )}
             </div>
 
             {/* Order summary */}
             <div className="bg-brand-surface rounded-2xl shadow p-6">
-              <h3 className="font-bold text-gray-700 mb-3">Your order</h3>
+              <h3 className="font-bold text-gray-700 mb-3">{t('track.yourOrder')}</h3>
               <div className="space-y-2">
                 {order.items.map(item => (
                   <div key={item.id} className="text-sm">
                     <p className="font-medium text-brand-text">{item.menu_item_name}</p>
                     {item.ingredients.filter(i => i.included).length > 0 && (
                       <p className="text-gray-500">
-                        With: {item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
+                        {t('track.withPrefix')}: {item.ingredients.filter(i => i.included).map(i => i.ingredient_name).join(', ')}
                       </p>
                     )}
                     {item.ingredients.filter(i => !i.included).length > 0 && (
                       <p className="text-red-400">
-                        No: {item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
+                        {t('track.noPrefix')}: {item.ingredients.filter(i => !i.included).map(i => i.ingredient_name).join(', ')}
                       </p>
                     )}
                   </div>
@@ -212,7 +214,7 @@ export default function TrackOrder() {
               to={orderMorePath}
               className="block text-center mt-6 bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 rounded-xl text-lg shadow transition-colors"
             >
-              {tableLabel ? `Order more for ${tableLabel}` : 'Place another order'}
+              {tableLabel ? t('track.orderMoreFor', { table: tableLabel }) : t('track.placeAnotherOrder')}
             </Link>
           </div>
         )}

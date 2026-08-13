@@ -1,7 +1,7 @@
 import json
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -12,7 +12,8 @@ from app import models, schemas
 from app.database import get_db, SessionLocal
 from app.redis_client import get_redis
 from app.auth import get_kitchen_id
-from app.pricing import load_currency, load_prices, line_total
+from app.config import settings
+from app.pricing import load_currency, load_language, load_prices, line_total
 from app.timeutil import utcnow
 
 log = logging.getLogger(__name__)
@@ -72,6 +73,24 @@ def _queue_position(order: models.Order, db: Session) -> int | None:
         .count()
     )
     return ahead + 1
+
+
+def session_is_stale(orders: list[models.Order]) -> bool:
+    """True when a table's unpaid orders look like a party that already left.
+
+    Every bill is supposed to be closed by the cashier; this covers the one that
+    was not, so the next customer to scan the QR is not shown someone else's
+    food. Only a table whose orders are all finished can go stale — an order the
+    kitchen is still cooking belongs to whoever is sitting there right now, no
+    matter how long the queue has been.
+
+    Nothing is written: the orders stay open on the cashier's screen, because
+    money that was never collected must not quietly disappear.
+    """
+    if not orders or any(o.status != "completed" for o in orders):
+        return False
+    newest = max(o.created_at for o in orders)
+    return newest < utcnow() - timedelta(hours=settings.table_session_hours)
 
 
 def _resolve_table(table_code: str | None, kitchen_id: str, db: Session) -> models.Table | None:
@@ -218,6 +237,7 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
         "kitchen_id": order.kitchen_id,
         "total": order.total,
         "currency": load_currency(kitchen_id, db),
+        "ticket_language": load_language(kitchen_id, db),
         "items": [
             {
                 "name": oi.menu_item_name,
@@ -303,15 +323,16 @@ def get_orders_for_table(
     db: Session = Depends(get_db),
     kitchen_id: str = Depends(get_kitchen_id),
 ):
-    """Today's orders for one table, for the customer app's "already ordered" list.
+    """The current party's orders for one table, for the "already ordered" list.
 
     Keyed off the table's QR code rather than anything held in the browser, so the
     list survives a reload, a flat battery or a second phone — and everyone sitting
     at the table sees the same orders, which is the point of a shared table.
 
-    Scoped to today so a table does not accumulate last week's history, and
-    deliberately not filtered to active statuses: a customer should still see the
-    order they just collected.
+    Scoped to the orders that have not been paid for: the QR sticker is the same
+    one the last party scanned, so the cashier confirming payment is the only
+    thing that separates one party from the next. Still not filtered by status —
+    a customer should see the order they just collected, right up until they pay.
     """
     table = db.query(models.Table).filter(
         models.Table.kitchen_id == kitchen_id,
@@ -326,11 +347,17 @@ def get_orders_for_table(
         .filter(
             models.Order.kitchen_id == kitchen_id,
             models.Order.table_id == table.id,
-            func.date(models.Order.created_at) == utcnow().date(),
+            models.Order.settled_at.is_(None),
         )
         .order_by(models.Order.created_at.desc())
         .all()
     )
+    # No calendar-day filter: a party that sits down at 23:50 and orders again at
+    # 00:10 is one party, and paying is what ends it. A bill the cashier never
+    # closed is caught by the staleness rule instead.
+    if session_is_stale(orders):
+        return []
+
     results = []
     for order in orders:
         out = schemas.OrderOut.model_validate(order)

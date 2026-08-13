@@ -1,22 +1,26 @@
 import { useState, useEffect } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import api from '../lib/api'
-
-const nav = [
-  { to: '/orders', label: 'Order Queue' },
-  { to: '/history', label: 'Order History' },
-  { to: '/menu', label: 'Menu' },
-  { to: '/ingredients', label: 'Ingredients' },
-  { to: '/tables', label: 'Tables' },
-  { to: '/printers', label: 'Printers' },
-  { to: '/settings', label: 'Settings' },
-]
+import i18n, { SUPPORTED_LANGUAGES } from '../i18n'
 
 // onSignOut is supplied by the mode-specific wrapper in App: Clerk's signOut in
 // cloud mode, clearing the local JWT in self-hosted. Keeping it out of here is
 // what lets this component render in both.
 export default function Layout({ onSignOut }) {
+  const { t } = useTranslation()
   const [kitchenName, setKitchenName] = useState('ByteOrder')
+
+  const nav = [
+    { to: '/orders', label: t('layout.navOrders') },
+    { to: '/cashier', label: t('layout.navCashier') },
+    { to: '/history', label: t('layout.navHistory') },
+    { to: '/menu', label: t('layout.navMenu') },
+    { to: '/ingredients', label: t('layout.navIngredients') },
+    { to: '/tables', label: t('layout.navTables') },
+    { to: '/printers', label: t('layout.navPrinters') },
+    { to: '/settings', label: t('layout.navSettings') },
+  ]
 
   useEffect(() => {
     const apply = (key, prop) =>
@@ -30,8 +34,14 @@ export default function Layout({ onSignOut }) {
     api.get('/settings/kitchen_name').then(({ data }) => {
       if (data.value) {
         setKitchenName(data.value)
-        document.title = `${data.value} Admin`
+        document.title = `${data.value} ${t('layout.adminSuffix')}`
       }
+    }).catch(() => {})
+    api.get('/settings/default_language').then(({ data }) => {
+      const lang = data.value
+      const resolved = SUPPORTED_LANGUAGES.includes(lang) ? lang : 'en'
+      i18n.changeLanguage(resolved)
+      document.documentElement.lang = resolved
     }).catch(() => {})
   }, [])
 
@@ -39,8 +49,8 @@ export default function Layout({ onSignOut }) {
     <div className="min-h-screen bg-brand-bg flex flex-col">
       <header className="bg-brand-600 text-white shadow">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
-          <span className="text-xl font-bold tracking-tight">{kitchenName} Admin</span>
-          <button onClick={onSignOut} className="text-sm underline hover:no-underline">Log out</button>
+          <span className="text-xl font-bold tracking-tight">{kitchenName} {t('layout.adminSuffix')}</span>
+          <button onClick={onSignOut} className="text-sm underline hover:no-underline">{t('layout.logOut')}</button>
         </div>
       </header>
 

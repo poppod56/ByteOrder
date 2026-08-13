@@ -1,5 +1,6 @@
 import { vi } from 'vitest'
 import '@testing-library/jest-dom'
+import './i18n'
 
 // EventSource is not available in jsdom — provide a minimal stub.
 // Must be a class (or regular function), not an arrow function, because

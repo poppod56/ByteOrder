@@ -1,0 +1,108 @@
+{
+  "common": {
+    "kitchenNotFound": "Kitchen not found",
+    "checkUrlAndTryAgain": "Check the URL and try again.",
+    "welcome": "Welcome to ByteOrder",
+    "scanAtYourTable": "Scan the QR code at your table to place an order."
+  },
+  "home": {
+    "scanToOrder": "Scan to order from your phone",
+    "tapHerePrefix": "or",
+    "tapHere": "tap here",
+    "tapHereSuffix": "to order",
+    "liveQueue": "Live Queue",
+    "noActiveOrders": "No active orders — be the first!",
+    "status": {
+      "pending": "Waiting",
+      "in_progress": "Cooking",
+      "ready": "Ready!"
+    },
+    "placeOrder": "Place Order",
+    "trackOrder": "Track Order"
+  },
+  "order": {
+    "menuCategories": "Menu categories",
+    "unknownTableCode": "We couldn't recognise that table code — please order as a takeaway, or ask a member of staff.",
+    "tableRotatedTitle": "This table has a new QR code",
+    "tableRotatedBody": "Scan the sticker on your table again to order for {{table}}. Or keep this order and collect it yourself.",
+    "tableRotatedBodyGeneric": "your table",
+    "keepAsTakeaway": "Keep my order as a takeaway",
+    "menuEmpty": "The menu is empty right now.",
+    "yourCart": "Your cart",
+    "cartEmpty": "Nothing in the cart yet.",
+    "browseMenu": "Browse the menu",
+    "noPrefix": "No",
+    "eachSuffix": "each",
+    "total": "Total",
+    "yourName": "Your name",
+    "namePlaceholder": "So we can call you when it's ready",
+    "placing": "Placing…",
+    "placeOrder": "Place order",
+    "placeOrderFailed": "Failed to place order. Please try again.",
+    "ordersForTable": "Orders for {{table}}",
+    "yourOrders": "Your orders",
+    "tableOrdersSubtitle": "Everything ordered at this table today.",
+    "myOrdersSubtitle": "Orders placed on this device.",
+    "ordersEmpty": "Nothing ordered yet.",
+    "orderLineSummary": "{{quantity}}x {{name}}",
+    "queuePosition": "#{{position}} in the queue",
+    "fewer": "Fewer",
+    "more": "More",
+    "fewerItem": "Fewer {{name}}",
+    "moreItem": "More {{name}}",
+    "navMenu": "Menu",
+    "navCart": "Cart",
+    "navOrders": "Orders",
+    "navSections": "Sections",
+    "status": {
+      "pending": "In the queue",
+      "in_progress": "Being prepared",
+      "ready": "Ready",
+      "completed": "Done"
+    }
+  },
+  "itemSheet": {
+    "close": "Close",
+    "pleaseChoose": "Please choose: {{groups}}",
+    "addToCart": "Add {{count}} to cart",
+    "required": "Required",
+    "chooseOne": "Choose one",
+    "chooseUpTo": "Choose up to {{count}}",
+    "atLeast": "at least {{count}}",
+    "toppings": "Toppings",
+    "quantity": "Quantity"
+  },
+  "track": {
+    "header": "Track Order",
+    "findYourOrder": "Find your order",
+    "lookupPlaceholder": "Enter your order tracking code",
+    "track": "Track",
+    "orderNotFound": "Order not found. Check your order number.",
+    "tryAgain": "Try again",
+    "loading": "Loading…",
+    "yourOrder": "Your order",
+    "withPrefix": "With",
+    "noPrefix": "No",
+    "queuePosition": "You are #{{position}} in the queue",
+    "orderMoreFor": "Order more for {{table}}",
+    "placeAnotherOrder": "Place another order",
+    "status": {
+      "pending": "Order received",
+      "in_progress": "Being prepared",
+      "readyTable": "On its way!",
+      "readyTakeaway": "Ready to collect!"
+    },
+    "description": {
+      "pendingTable": "Your order is in the queue. We'll bring it to {{table}}.",
+      "pendingTakeaway": "Your order is in the queue. Sit tight!",
+      "inProgress": "The chef is working on your order now.",
+      "readyTable": "Your order is on its way to {{table}}!",
+      "readyTakeaway": "Your order is ready — come and get it!"
+    },
+    "notification": {
+      "title": "Your order is ready!",
+      "bodyTable": "On its way to {{table}}!",
+      "bodyTakeaway": "Come and collect your order!"
+    }
+  }
+}

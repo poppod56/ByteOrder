@@ -14,6 +14,21 @@ log = logging.getLogger(__name__)
 BLE_PRINT_URL = "http://localhost:8080/print"
 RECONNECT_DELAY = 5  # seconds between SSE reconnect attempts
 
+# Ticket labels only — menu item/ingredient/option names print in whatever
+# language the kitchen entered them in and are never translated here. Kept in
+# step with print-service's TICKET_LABELS: this client has no DB of its own, so
+# the language travels on the order payload as "ticket_language" instead.
+TICKET_LABELS = {
+    "en": {
+        "table": "TABLE", "customer": "Customer", "with": "With",
+        "no": "NO", "note": "Note", "total": "TOTAL", "ea": "ea",
+    },
+    "th": {
+        "table": "โต๊ะ", "customer": "ลูกค้า", "with": "ใส่",
+        "no": "ไม่ใส่", "note": "หมายเหตุ", "total": "ยอดรวม", "ea": "ต่อชิ้น",
+    },
+}
+
 
 def _money(minor, currency: str) -> str:
     """Minor units to a printable amount; prices are stored as integers."""
@@ -30,6 +45,9 @@ def _format_order(order: dict) -> str:
     to one ticket has to be added to the other, or the two printer backends
     print different things.
     """
+    lang = order.get("ticket_language") or "en"
+    labels = TICKET_LABELS.get(lang, TICKET_LABELS["en"])
+
     lines = []
     lines.append("=" * 32)
     # Redis payload uses order_number; fall back to order_id then unknown
@@ -40,11 +58,11 @@ def _format_order(order: dict) -> str:
     # Table first: it is what staff read to know where the food goes. Absent for
     # takeaway orders placed from the kiosk QR.
     if order.get("table_label"):
-        lines.append(f"TABLE: {order['table_label']}")
+        lines.append(f"{labels['table']}: {order['table_label']}")
 
     customer = order.get("customer_name") or order.get("customer_phone") or ""
     if customer:
-        lines.append(f"Customer: {customer}")
+        lines.append(f"{labels['customer']}: {customer}")
 
     currency = order.get("currency") or "THB"
 
@@ -54,7 +72,7 @@ def _format_order(order: dict) -> str:
         qty = item.get("quantity", 1)
         notes = item.get("notes") or ""
         unit = item.get("unit_price")
-        lines.append(f"  {qty}x {name}" + (f"   {_money(unit, currency)} ea" if unit is not None else ""))
+        lines.append(f"  {qty}x {name}" + (f"   {_money(unit, currency)} {labels['ea']}" if unit is not None else ""))
         if notes:
             lines.append(f"     * {notes}")
 
@@ -62,12 +80,12 @@ def _format_order(order: dict) -> str:
         included = [i["name"] for i in ingredients if i.get("included")]
         excluded = [i["name"] for i in ingredients if not i.get("included")]
         if included:
-            lines.append(f"     With: {', '.join(included)}")
+            lines.append(f"     {labels['with']}: {', '.join(included)}")
         for i in ingredients:
             if i.get("included") and i.get("price_delta"):
                 lines.append(f"       + {i['name']}  {_money(i['price_delta'], currency)}")
         if excluded:
-            lines.append(f"     NO:   {', '.join(excluded)}")
+            lines.append(f"     {labels['no']}:   {', '.join(excluded)}")
 
         options_by_group: dict[str, list[str]] = {}
         for opt in item.get("options") or []:
@@ -80,11 +98,11 @@ def _format_order(order: dict) -> str:
 
     if order.get("notes"):
         lines.append("")
-        lines.append(f"Note: {order['notes']}")
+        lines.append(f"{labels['note']}: {order['notes']}")
 
     if order.get("total") is not None:
         lines.append("-" * 32)
-        lines.append(f"TOTAL: {_money(order['total'], currency)}")
+        lines.append(f"{labels['total']}: {_money(order['total'], currency)}")
 
     lines.append("=" * 32)
     lines.append("")

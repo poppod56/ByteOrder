@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { useTranslation } from 'react-i18next'
 
 /**
  * Sheet that slides up from the bottom edge — the phone-native way to show detail
@@ -9,6 +10,7 @@ import { useEffect } from 'react'
  * sheet's content cannot scroll the menu behind it.
  */
 export default function BottomSheet({ open, onClose, title, children, footer }) {
+  const { t } = useTranslation()
   useEffect(() => {
     if (!open) return
     const previous = document.body.style.overflow
@@ -26,7 +28,7 @@ export default function BottomSheet({ open, onClose, title, children, footer }) 
   return (
     <div className="fixed inset-0 z-50 flex items-end" role="dialog" aria-modal="true" aria-label={title}>
       <button
-        aria-label="Close"
+        aria-label={t('itemSheet.close')}
         onClick={onClose}
         className="absolute inset-0 bg-black/40 cursor-default"
       />

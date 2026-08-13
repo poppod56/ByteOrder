@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { KitchenProvider } from './contexts/KitchenContext'
 import Home from './pages/Home'
 import Order from './pages/Order'
@@ -33,6 +34,18 @@ function DirectKitchenRoutes() {
   )
 }
 
+function FallbackWelcome() {
+  const { t } = useTranslation()
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="text-center">
+        <h1 className="text-2xl font-bold text-gray-800 mb-2">{t('common.welcome')}</h1>
+        <p className="text-gray-500">{t('common.scanAtYourTable')}</p>
+      </div>
+    </div>
+  )
+}
+
 export default function App() {
   return (
     <Routes>
@@ -40,14 +53,7 @@ export default function App() {
       <Route path="/order" element={<DirectKitchenRoutes />} />
       <Route path="/track/*" element={<DirectKitchenRoutes />} />
       <Route path="/" element={<DirectKitchenRoutes />} />
-      <Route path="*" element={
-        <div className="min-h-screen flex items-center justify-center bg-gray-50">
-          <div className="text-center">
-            <h1 className="text-2xl font-bold text-gray-800 mb-2">Welcome to ByteOrder</h1>
-            <p className="text-gray-500">Scan the QR code at your table to place an order.</p>
-          </div>
-        </div>
-      } />
+      <Route path="*" element={<FallbackWelcome />} />
     </Routes>
   )
 }

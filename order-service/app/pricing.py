@@ -18,6 +18,8 @@ log = logging.getLogger(__name__)
 
 _MENU_TABLES = {"menu_items", "menu_item_ingredients", "options"}
 DEFAULT_CURRENCY = "THB"
+DEFAULT_LANGUAGE = "en"
+SUPPORTED_LANGUAGES = {"en", "th"}
 
 # Both services migrate at startup with no ordering between them, so menu-service's
 # tables may briefly be absent. Once seen, a table cannot disappear, so positive
@@ -129,6 +131,23 @@ def load_currency(kitchen_id: str, db: Session) -> str:
         {"kid": kitchen_id},
     ).fetchone()
     return (row[0] if row and row[0] else "") or DEFAULT_CURRENCY
+
+
+def load_language(kitchen_id: str, db: Session) -> str:
+    """Ticket language for the kitchen, defaulting to English.
+
+    Read here and published with the order so both ticket formatters print the
+    same labels instead of each looking it up (and print-service and
+    pi-printer-client would otherwise disagree, since the Pi has no DB access).
+    """
+    if not _table_available(db, "settings"):
+        return DEFAULT_LANGUAGE
+    row = db.execute(
+        text("SELECT value FROM settings WHERE kitchen_id = :kid AND key = 'default_language'"),
+        {"kid": kitchen_id},
+    ).fetchone()
+    value = row[0] if row and row[0] else ""
+    return value if value in SUPPORTED_LANGUAGES else DEFAULT_LANGUAGE
 
 
 def line_total(

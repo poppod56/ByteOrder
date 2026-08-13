@@ -134,3 +134,22 @@ def test_frontend_url_rejects_a_bare_hostname(client):
 def test_frontend_url_can_be_cleared(client):
     client.put("/settings/frontend_url", json={"value": "https://order.example.com"})
     assert client.put("/settings/frontend_url", json={"value": ""}).status_code == 200
+
+
+# ── default_language validation ────────────────────────────────────────────────
+# This value selects a translation bundle by key in the frontend/admin/print
+# services, so only codes those services actually ship may be stored.
+
+def test_default_language_accepts_supported_codes(client):
+    assert client.put("/settings/default_language", json={"value": "en"}).status_code == 200
+    assert client.put("/settings/default_language", json={"value": "th"}).status_code == 200
+
+
+def test_default_language_rejects_unsupported_code(client):
+    res = client.put("/settings/default_language", json={"value": "fr"})
+    assert res.status_code == 400
+
+
+def test_default_language_can_be_cleared(client):
+    client.put("/settings/default_language", json={"value": "th"})
+    assert client.put("/settings/default_language", json={"value": ""}).status_code == 200
