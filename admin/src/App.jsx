@@ -5,6 +5,7 @@ import Layout from './components/Layout'
 import { setupApiInterceptors, setupSelfHostedInterceptors } from './lib/api'
 import Login from './pages/Login'
 import OrderQueue from './pages/OrderQueue'
+import Cashier from './pages/Cashier'
 import OrderHistory from './pages/OrderHistory'
 import MenuManagement from './pages/MenuManagement'
 import Ingredients from './pages/Ingredients'
@@ -67,6 +68,7 @@ export default function App({ authMode }) {
       >
         <Route index element={<Navigate to="/orders" replace />} />
         <Route path="orders" element={<OrderQueue />} />
+        <Route path="cashier" element={<Cashier />} />
         <Route path="history" element={<OrderHistory />} />
         <Route path="menu" element={<MenuManagement />} />
         <Route path="ingredients" element={<Ingredients />} />
