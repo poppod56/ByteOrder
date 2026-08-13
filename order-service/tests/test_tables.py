@@ -452,7 +452,7 @@ def test_bulk_create_of_two_hundred_tables_is_not_quadratic(client):
 # Keyed off the QR code so the customer app's "already ordered" list survives a
 # reload or a second phone, and everyone at the table sees the same thing.
 
-def test_lists_todays_orders_for_the_table_newest_first(client):
+def test_lists_the_tables_unpaid_orders_newest_first(client):
     table = _make_table(client, "Table 1")
     first = client.post("/orders/", json=_order(table_code=table["code"])).json()
     second = client.post("/orders/", json=_order(table_code=table["code"])).json()

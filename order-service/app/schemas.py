@@ -69,6 +69,8 @@ class OrderOut(BaseModel):
     table_id: Optional[int] = None
     table_label: Optional[str] = None
     total: Optional[int] = None
+    settled_at: Optional[datetime] = None
+    bill_id: Optional[str] = None
     items: list[OrderItemOut] = []
     queue_position: Optional[int] = None
     model_config = {"from_attributes": True}
@@ -101,6 +103,46 @@ class TableOut(BaseModel):
     code_printed_at: Optional[datetime] = None
     created_at: datetime
     model_config = {"from_attributes": True}
+
+
+class TableSettleIn(BaseModel):
+    """The orders the cashier had on screen when they pressed confirm.
+
+    Sent explicitly rather than settling "everything open for this table": a
+    dish ordered while the cashier was reading the bill would otherwise be
+    marked paid without anyone having collected the money for it.
+    """
+    order_ids: list[int] = []
+
+
+class OpenTableOut(BaseModel):
+    """One table with money still owed on it."""
+    table_id: int
+    code: str
+    label: str
+    active: bool
+    order_count: int
+    # Sum of the orders that carry a price. NULL when the kitchen prices nothing,
+    # so the cashier screen shows a checklist rather than a bogus 0.00 total.
+    total: Optional[int] = None
+    opened_at: datetime
+    last_order_at: datetime
+    # Orders the kitchen has not finished yet — the cashier is told before they
+    # take payment, they are not stopped from taking it.
+    unserved_count: int
+    # All finished and untouched for hours: almost certainly a bill nobody closed.
+    # Hidden from the customer app already; flagged here so it can be cleared.
+    stale: bool
+    orders: list[OrderOut] = []
+    model_config = {"from_attributes": True}
+
+
+class SettleOut(BaseModel):
+    bill_id: str
+    settled: list[OrderOut] = []
+    # Anything still unpaid for the table once this bill closed — normally empty,
+    # non-empty exactly when an order landed while the cashier was confirming.
+    outstanding: list[OrderOut] = []
 
 
 class TablePublicOut(BaseModel):

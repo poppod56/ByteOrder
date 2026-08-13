@@ -4,6 +4,21 @@ metadata:
   name: byteorder-frontend-nginx
 data:
   default.conf: |
+    # The customer app is public and unauthenticated, and order-service has no
+    # authentication of its own — the admin proxy is what guards it. So everything
+    # this server forwards is effectively world-callable, and only the handful of
+    # endpoints a diner actually needs may be forwarded. Left open,
+    # /orders/{id}/status would let any customer advance the kitchen's queue and
+    # /orders/tables/{id}/settle would let them close their own bill.
+    map $request_uri $customer_orders_api {
+        default 0;
+        ~^/orders-api/orders/(\?|$)                          1;   # place an order
+        ~^/orders-api/orders/queue(/stream)?(\?|$)           1;   # the kiosk display
+        ~^/orders-api/orders/track/[^/?]+(/stream)?(\?|$)    1;   # track one order
+        ~^/orders-api/orders/tables/by-code/[^/?]+(\?|$)     1;   # resolve a scanned QR
+        ~^/orders-api/orders/by-table/[^/?]+(\?|$)           1;   # this table's unpaid orders
+    }
+
     server {
         listen 80;
         root /usr/share/nginx/html;
@@ -19,6 +34,9 @@ data:
         # Proxy order-service API calls
         # X-Kitchen-ID is set by the React frontend; kitchen_id query param used for SSE
         location /orders-api/ {
+            if ($customer_orders_api = 0) {
+                return 403;
+            }
             proxy_pass http://byteorder-order-service:8001/;
             proxy_set_header Host $host;
             # SSE support

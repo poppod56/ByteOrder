@@ -197,6 +197,28 @@ def test_duplicate_table_labels_are_suffixed_then_constrained(legacy_db, monkeyp
         assert "tables_kitchen_label_key" in _constraints(conn, "tables")
 
 
+def test_existing_orders_start_out_unpaid(legacy_db, monkeypatch):
+    """Unsettled is the safe default: an old bill lands on the cashier's screen
+    to be closed rather than counting itself as already collected."""
+    _migrate(legacy_db, monkeypatch)
+
+    with legacy_db.connect() as conn:
+        cols = {r[0] for r in conn.execute(text("""
+            SELECT column_name FROM information_schema.columns WHERE table_name = 'orders'
+        """)).fetchall()}
+        assert {"settled_at", "bill_id"} <= cols
+
+        unsettled = conn.execute(text(
+            "SELECT count(*) FROM orders WHERE settled_at IS NULL"
+        )).scalar()
+        assert unsettled == 2
+
+        indexes = {r[0] for r in conn.execute(text(
+            "SELECT indexname FROM pg_indexes WHERE tablename = 'orders'"
+        )).fetchall()}
+        assert "orders_open_bills_idx" in indexes
+
+
 def test_migration_is_idempotent(legacy_db, monkeypatch):
     _migrate(legacy_db, monkeypatch)
     _migrate(legacy_db, monkeypatch)

@@ -94,6 +94,17 @@ def _run_migrations():
         conn.execute(text("ALTER TABLE order_items ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1"))
         conn.execute(text("ALTER TABLE order_item_ingredients ADD COLUMN IF NOT EXISTS price_delta INTEGER NOT NULL DEFAULT 0"))
         conn.execute(text("ALTER TABLE order_item_options ADD COLUMN IF NOT EXISTS price_delta INTEGER NOT NULL DEFAULT 0"))
+        # Cashier checkout. Both nullable: every order that predates this is
+        # treated as unsettled, which is the safe side — an old bill shows up on
+        # the cashier's screen to be closed rather than silently counting as paid.
+        conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_at TIMESTAMP"))
+        conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS bill_id VARCHAR"))
+        # The two hot reads — the customer app's "already ordered" list and the
+        # cashier's open tables — both filter on exactly these three columns.
+        conn.execute(text("""
+            CREATE INDEX IF NOT EXISTS orders_open_bills_idx
+                ON orders (kitchen_id, table_id, settled_at)
+        """))
         # A duplicate label makes the printed ticket ambiguous, so the column is
         # unique — but earlier builds allowed duplicates, so any existing ones are
         # suffixed first rather than letting the constraint fail startup.

@@ -48,6 +48,14 @@ class Order(Base):
     # Minor units, snapshotted at order time. NULL when the menu carried no
     # prices — the kitchen is then simply not using the pricing feature.
     total = Column(Integer, nullable=True)
+    # Set when the cashier confirms payment. Until then the order belongs to
+    # whoever is sitting at the table now, which is what decides whether the
+    # next person to scan the QR sees it. Never used to hide an order from the
+    # kitchen or from history — a settled order is paid, not gone.
+    settled_at = Column(DateTime, nullable=True)
+    # Orders closed by one press of "confirm payment" share this, so a bill can
+    # be reconciled or reprinted as a unit without a separate sessions table.
+    bill_id = Column(String, nullable=True, index=True)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
