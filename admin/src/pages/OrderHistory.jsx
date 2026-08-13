@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import api from '../lib/api'
+import { formatMoney } from '../lib/money'
 
 function todayStr() {
   const d = new Date()
@@ -14,7 +15,9 @@ function todayStr() {
 export default function OrderHistory() {
   const { t } = useTranslation()
   const [orders, setOrders] = useState([])
+  const [takings, setTakings] = useState(null)
   const [loading, setLoading] = useState(true)
+  const [currency, setCurrency] = useState('THB')
   const [date, setDate] = useState(todayStr())
 
   async function fetchHistory(d) {
@@ -29,7 +32,27 @@ export default function OrderHistory() {
     }
   }
 
-  useEffect(() => { fetchHistory(date) }, [date])
+  async function fetchTakings(d) {
+    try {
+      // The till counts its day in its own timezone, not UTC — an evening's
+      // takings must not be filed under two dates.
+      const { data } = await api.get('/orders/takings', {
+        params: { date: d, tz_offset: -new Date().getTimezoneOffset() },
+      })
+      setTakings(data)
+    } catch (err) {
+      console.error(err)
+      setTakings(null)
+    }
+  }
+
+  useEffect(() => {
+    api.get('/settings/currency')
+      .then(({ data }) => { if (data.value) setCurrency(data.value) })
+      .catch(() => {})
+  }, [])
+
+  useEffect(() => { fetchHistory(date); fetchTakings(date) }, [date])
 
   return (
     <div>
@@ -42,6 +65,45 @@ export default function OrderHistory() {
           className="border rounded px-3 py-1.5 text-sm"
         />
       </div>
+
+      {takings && (
+        <section className="bg-brand-surface rounded-xl shadow p-4 mb-6">
+          <div className="flex items-baseline justify-between gap-4 flex-wrap">
+            <h2 className="font-semibold text-brand-text">{t('orderHistory.takings')}</h2>
+            <p className="text-2xl font-extrabold text-brand-text">
+              {takings.total === null ? '—' : formatMoney(takings.total, currency)}
+            </p>
+          </div>
+          <p className="text-sm text-gray-500">
+            {t('orderHistory.billCount', { count: takings.bill_count })}
+          </p>
+
+          {takings.by_method.length > 0 && (
+            <dl className="mt-3 divide-y divide-gray-100 text-sm">
+              {takings.by_method.map(row => (
+                <div key={row.method || 'unrecorded'} className="flex justify-between py-1.5">
+                  <dt className="text-gray-700">
+                    {row.method ? t(`cashier.method.${row.method}`) : t('orderHistory.methodUnrecorded')}
+                    <span className="text-gray-400"> · {t('orderHistory.billCount', { count: row.bill_count })}</span>
+                  </dt>
+                  <dd className="font-semibold text-brand-text">
+                    {row.total === null ? '—' : formatMoney(row.total, currency)}
+                  </dd>
+                </div>
+              ))}
+            </dl>
+          )}
+
+          {takings.unpaid_order_count > 0 && (
+            <p className="mt-3 text-sm text-yellow-800 bg-yellow-50 rounded-lg px-3 py-2">
+              {t('orderHistory.stillUnpaid', {
+                count: takings.unpaid_order_count,
+                amount: takings.unpaid_total === null ? '—' : formatMoney(takings.unpaid_total, currency),
+              })}
+            </p>
+          )}
+        </section>
+      )}
 
       {loading && <p className="text-gray-500">{t('orderHistory.loading')}</p>}
 

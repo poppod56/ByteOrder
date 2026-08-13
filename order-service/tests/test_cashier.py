@@ -6,7 +6,7 @@ payment is what separates one party from the next — until that happens, the
 orders on the table are the current party's, and afterwards they are history.
 """
 import json
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 from sqlalchemy import text
@@ -434,3 +434,143 @@ def test_a_kitchen_ticket_is_marked_as_one(client, mock_redis):
     tickets = [json.loads(c.args[1]) for c in mock_redis.publish.call_args_list
                if c.args[0] == "new_orders"]
     assert [t["kind"] for t in tickets] == ["order"]
+
+
+# ── The end-of-day count ─────────────────────────────────────────────────────
+
+def _settle_with(client, table, orders, method):
+    return client.post(
+        f"/orders/tables/{table['id']}/settle",
+        json={"order_ids": [o["id"] for o in orders], "payment_method": method},
+    )
+
+
+def test_takings_split_by_how_each_bill_was_paid(client, priced_menu):
+    tables = client.post("/orders/tables/", json={"label": "T", "count": 3}).json()
+    _settle_with(client, tables[0], [_place(client, tables[0])], "cash")
+    _settle_with(client, tables[1], [_place(client, tables[1]), _place(client, tables[1])], "cash")
+    _settle_with(client, tables[2], [_place(client, tables[2])], "card")
+
+    takings = client.get("/orders/takings").json()
+
+    assert takings["bill_count"] == 3
+    assert takings["order_count"] == 4
+    assert takings["total"] == 48000
+    assert [(r["method"], r["bill_count"], r["total"]) for r in takings["by_method"]] == [
+        ("cash", 2, 36000),
+        ("card", 1, 12000),
+    ]
+
+
+def test_takings_keep_unrecorded_methods_in_their_own_column(client, priced_menu):
+    """Folding them into cash would invent money in a column that must balance."""
+    table = _make_table(client, "Table 1")
+    _settle(client, table, [_place(client, table)])
+
+    rows = client.get("/orders/takings").json()["by_method"]
+    assert [(r["method"], r["total"]) for r in rows] == [(None, 12000)]
+
+
+def test_takings_count_the_day_the_money_arrived(client, db, priced_menu):
+    """A table that ordered before midnight and paid after belongs to the day it
+    paid for — that is the drawer that has to balance."""
+    table = _make_table(client, "Table 1")
+    order = _place(client, table)
+    _age(db, order["id"], hours=30)
+    _settle_with(client, table, [order], "cash")
+
+    assert client.get("/orders/takings").json()["total"] == 12000
+
+
+def test_takings_exclude_another_days_bills(client, db, priced_menu):
+    table = _make_table(client, "Table 1")
+    order = _place(client, table)
+    _settle_with(client, table, [order], "cash")
+    db.query(models.Order).filter(models.Order.id == order["id"]).update(
+        {"settled_at": utcnow() - timedelta(days=2)}
+    )
+    db.commit()
+
+    takings = client.get("/orders/takings").json()
+    assert takings["bill_count"] == 0
+    assert takings["total"] is None
+
+
+def test_takings_can_be_asked_for_an_earlier_day(client, db, priced_menu):
+    table = _make_table(client, "Table 1")
+    order = _place(client, table)
+    _settle_with(client, table, [order], "cash")
+    yesterday = utcnow() - timedelta(days=1)
+    db.query(models.Order).filter(models.Order.id == order["id"]).update({"settled_at": yesterday})
+    db.commit()
+
+    takings = client.get("/orders/takings", params={"date": yesterday.date().isoformat()}).json()
+    assert takings["date"] == yesterday.date().isoformat()
+    assert takings["total"] == 12000
+
+
+def test_takings_follow_the_tills_own_midnight(client, db, priced_menu):
+    """Counted in UTC, a Bangkok kitchen's day would break at 07:00 and file one
+    evening's takings under two dates."""
+    table = _make_table(client, "Table 1")
+    order = _place(client, table)
+    _settle_with(client, table, [order], "cash")
+    # 20:30 Bangkok on the 2nd is 13:30 UTC on the 2nd — same date either way.
+    # 00:30 Bangkok on the 3rd is 17:30 UTC on the 2nd, and belongs to the 3rd.
+    db.query(models.Order).filter(models.Order.id == order["id"]).update(
+        {"settled_at": datetime(2026, 8, 2, 17, 30)}
+    )
+    db.commit()
+
+    bangkok = {"tz_offset": 420}
+    assert client.get("/orders/takings", params={"date": "2026-08-03", **bangkok}).json()["total"] == 12000
+    assert client.get("/orders/takings", params={"date": "2026-08-02", **bangkok}).json()["total"] is None
+    # And read in UTC it lands on the 2nd, which is exactly the mistake.
+    assert client.get("/orders/takings", params={"date": "2026-08-02"}).json()["total"] == 12000
+
+
+def test_takings_show_what_has_not_been_collected_yet(client, priced_menu):
+    table = _make_table(client, "Table 1")
+    _place(client, table)
+    paid = _make_table(client, "Table 2")
+    _settle_with(client, paid, [_place(client, paid)], "cash")
+
+    takings = client.get("/orders/takings").json()
+    assert takings["unpaid_order_count"] == 1
+    assert takings["unpaid_total"] == 12000
+    assert takings["total"] == 12000
+
+
+def test_takeaway_is_not_counted_as_an_uncollected_table(client, priced_menu):
+    """Takeaway is never settled through a table, so it would sit there forever."""
+    client.post("/orders/", json=_order())
+
+    takings = client.get("/orders/takings").json()
+    assert takings["unpaid_order_count"] == 0
+
+
+def test_takings_report_nothing_rather_than_zero_for_an_unpriced_menu(client):
+    table = _make_table(client, "Table 1")
+    _settle_with(client, table, [_place(client, table)], "cash")
+
+    takings = client.get("/orders/takings").json()
+    assert takings["bill_count"] == 1
+    assert takings["total"] is None
+
+
+def test_another_kitchens_takings_are_not_counted(client, db, priced_menu):
+    table = _make_table(client, "Table 1")
+    _settle_with(client, table, [_place(client, table)], "cash")
+    db.add(models.Order(
+        kitchen_id="other-kitchen", order_number="BO-X", customer_name="Theirs",
+        table_id=999, table_label="Theirs", total=99900,
+        settled_at=utcnow(), bill_id="their-bill", payment_method="cash",
+    ))
+    db.commit()
+
+    assert client.get("/orders/takings").json()["total"] == 12000
+
+
+def test_a_nonsense_date_or_offset_is_rejected(client):
+    assert client.get("/orders/takings", params={"date": "yesterday"}).status_code == 400
+    assert client.get("/orders/takings", params={"tz_offset": 5000}).status_code == 400

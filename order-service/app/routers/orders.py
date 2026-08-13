@@ -329,6 +329,112 @@ def get_history(date: str | None = None, db: Session = Depends(get_db), kitchen_
     return q.order_by(models.Order.created_at.desc()).all()
 
 
+def _local_day(date: str | None, tz_offset: int) -> tuple[datetime, datetime, str]:
+    """The UTC window covering one local calendar day, and the day's own name.
+
+    Timestamps are stored as naive UTC, so a day counted in UTC would cut a
+    Bangkok kitchen's trading day at 07:00 and file the evening's takings under
+    two dates. The offset comes from the browser doing the asking, which is the
+    till standing in the restaurant.
+
+    Returned as a half-open window so it can be compared directly against the
+    stored column — no database-specific date arithmetic, and the index on
+    settled_at still applies.
+    """
+    if not -14 * 60 <= tz_offset <= 14 * 60:
+        raise HTTPException(status_code=400, detail="tz_offset must be within ±14 hours")
+    offset = timedelta(minutes=tz_offset)
+    if date:
+        try:
+            day = datetime.strptime(date, "%Y-%m-%d").date()
+        except ValueError as e:
+            raise HTTPException(status_code=400, detail="Use YYYY-MM-DD") from e
+    else:
+        day = (utcnow() + offset).date()
+    start = datetime(day.year, day.month, day.day) - offset
+    return start, start + timedelta(days=1), day.isoformat()
+
+
+@router.get("/takings", response_model=schemas.TakingsOut)
+def get_takings(
+    date: str | None = None,
+    tz_offset: int = 0,
+    db: Session = Depends(get_db),
+    kitchen_id: str = Depends(get_kitchen_id),
+):
+    """What the till took in on one day, broken down by how it was paid.
+
+    Counted by when the money was taken, not when the food was ordered: a table
+    that ordered before midnight and paid after belongs to the day it paid for,
+    which is the day whose cash drawer has to balance.
+
+    The unpaid figures are the other way round — orders placed that day that
+    nobody has settled — so a short till has somewhere obvious to look. Takeaway
+    orders appear in neither: they are never settled through a table, so this
+    reports table trade only.
+    """
+    start, end, day = _local_day(date, tz_offset)
+
+    settled = (
+        db.query(models.Order)
+        .filter(
+            models.Order.kitchen_id == kitchen_id,
+            models.Order.settled_at >= start,
+            models.Order.settled_at < end,
+        )
+        .all()
+    )
+
+    by_method: dict[str | None, list[models.Order]] = {}
+    bills: dict[str | None, set[str]] = {}
+    for order in settled:
+        by_method.setdefault(order.payment_method, []).append(order)
+        bills.setdefault(order.payment_method, set()).add(order.bill_id)
+
+    def totalled(orders: list[models.Order]) -> int | None:
+        # None rather than 0 when nothing carried a price: an unpriced menu has
+        # no takings to report, which is not the same as having taken nothing.
+        priced = [o.total for o in orders if o.total is not None]
+        return sum(priced) if priced else None
+
+    rows = [
+        schemas.TakingsByMethodOut(
+            method=method,
+            bill_count=len(bills[method]),
+            order_count=len(orders),
+            total=totalled(orders),
+        )
+        # Largest first, so the biggest column to verify is at the top. Bills
+        # with no recorded method sort last whatever their size.
+        for method, orders in sorted(
+            by_method.items(),
+            key=lambda kv: (kv[0] is None, -(totalled(kv[1]) or 0), kv[0] or ""),
+        )
+    ]
+
+    unpaid = (
+        db.query(models.Order)
+        .filter(
+            models.Order.kitchen_id == kitchen_id,
+            models.Order.table_id.isnot(None),
+            models.Order.settled_at.is_(None),
+            models.Order.created_at >= start,
+            models.Order.created_at < end,
+        )
+        .all()
+    )
+
+    return schemas.TakingsOut(
+        date=day,
+        bill_count=len({o.bill_id for o in settled}),
+        order_count=len(settled),
+        total=totalled(settled),
+        by_method=rows,
+        unpaid_order_count=len(unpaid),
+        unpaid_total=totalled(unpaid),
+    )
+
+
 @router.get("/by-table/{code}", response_model=list[schemas.OrderOut])
 def get_orders_for_table(
     code: str,

@@ -108,7 +108,13 @@
   "orderHistory": {
     "title": "Order History",
     "loading": "Loading…",
-    "empty": "No completed orders for this date"
+    "empty": "No completed orders for this date",
+    "takings": "Day's takings",
+    "billCount": "{{count}} bill",
+    "billCount_other": "{{count}} bills",
+    "methodUnrecorded": "Method not recorded",
+    "stillUnpaid": "{{count}} order from today has not been paid for yet ({{amount}}).",
+    "stillUnpaid_other": "{{count}} orders from today have not been paid for yet ({{amount}})."
   },
   "printers": {
     "title": "Printers",

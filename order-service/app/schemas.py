@@ -151,6 +151,28 @@ class SettleOut(BaseModel):
     outstanding: list[OrderOut] = []
 
 
+class TakingsByMethodOut(BaseModel):
+    # None for bills closed before the method was recorded — kept as its own row
+    # rather than folded into cash, which would invent money in a column.
+    method: Optional[str] = None
+    bill_count: int
+    order_count: int
+    total: Optional[int] = None
+
+
+class TakingsOut(BaseModel):
+    """What the till took in on one day, for the end-of-day count."""
+    date: str
+    bill_count: int
+    order_count: int
+    total: Optional[int] = None
+    by_method: list[TakingsByMethodOut] = []
+    # Money not counted yet: tables that were still open when this was read.
+    # Shown alongside so a short till has an obvious first place to look.
+    unpaid_order_count: int = 0
+    unpaid_total: Optional[int] = None
+
+
 class TablePublicOut(BaseModel):
     """Shape returned to unauthenticated customers resolving a QR code."""
     code: str

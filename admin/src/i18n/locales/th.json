@@ -108,7 +108,13 @@
   "orderHistory": {
     "title": "ประวัติออเดอร์",
     "loading": "กำลังโหลด…",
-    "empty": "ไม่มีออเดอร์ที่เสร็จสิ้นในวันนี้"
+    "empty": "ไม่มีออเดอร์ที่เสร็จสิ้นในวันนี้",
+    "takings": "ยอดขายวันนี้",
+    "billCount": "{{count}} บิล",
+    "billCount_other": "{{count}} บิล",
+    "methodUnrecorded": "ไม่ได้บันทึกวิธีจ่าย",
+    "stillUnpaid": "มี {{count}} ออเดอร์ของวันนี้ที่ยังไม่ได้เก็บเงิน ({{amount}})",
+    "stillUnpaid_other": "มี {{count}} ออเดอร์ของวันนี้ที่ยังไม่ได้เก็บเงิน ({{amount}})"
   },
   "printers": {
     "title": "เครื่องพิมพ์",
