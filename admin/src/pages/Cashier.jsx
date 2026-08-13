@@ -9,6 +9,10 @@ function clockTime(iso) {
   return date.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })
 }
 
+// Must stay in step with PAYMENT_METHODS in order-service: the till is counted
+// by method, so anything the server will not store must not be offered here.
+const PAYMENT_METHODS = ['cash', 'transfer', 'card', 'other']
+
 function lineDescription(item, noPrefix) {
   const bits = [
     ...item.options.map(o => `${o.group_name}: ${o.option_name}`),
@@ -29,6 +33,9 @@ export default function Cashier() {
   const [confirming, setConfirming] = useState(null)
   const [settling, setSettling] = useState(false)
   const [notice, setNotice] = useState(null)
+  // Cash is what most tables pay with, so it is preselected — but it is a real
+  // answer that gets recorded, not a silent default: the till is counted by it.
+  const [method, setMethod] = useState('cash')
 
   const fetchOpen = useCallback(async () => {
     try {
@@ -73,6 +80,7 @@ export default function Cashier() {
       // back as outstanding rather than being marked paid for free.
       const { data } = await api.post(`/orders/tables/${confirming.table_id}/settle`, {
         order_ids: confirming.orders.map(o => o.id),
+        payment_method: method,
       })
       setConfirming(null)
       setNotice(data.outstanding.length > 0
@@ -185,7 +193,7 @@ export default function Cashier() {
             )}
 
             <button
-              onClick={() => setConfirming(table)}
+              onClick={() => { setMethod('cash'); setConfirming(table) }}
               className="mt-auto w-full bg-brand-600 text-white font-semibold rounded-lg py-2.5 hover:opacity-90"
             >
               {t('cashier.confirmPayment')}
@@ -211,6 +219,30 @@ export default function Cashier() {
                 {t('cashier.unservedWarning', { count: confirming.unserved_count })}
               </p>
             )}
+
+            <fieldset className="mt-4">
+              <legend className="text-sm font-semibold text-brand-text mb-2">
+                {t('cashier.paidBy')}
+              </legend>
+              <div className="grid grid-cols-2 gap-2">
+                {PAYMENT_METHODS.map(value => (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={method === value}
+                    onClick={() => setMethod(value)}
+                    className={`rounded-lg py-2 text-sm font-semibold border ${
+                      method === value
+                        ? 'border-brand-600 bg-brand-600 text-white'
+                        : 'border-gray-300 text-gray-700'
+                    }`}
+                  >
+                    {t(`cashier.method.${value}`)}
+                  </button>
+                ))}
+              </div>
+            </fieldset>
+
             <div className="flex gap-3 mt-5">
               <button
                 onClick={() => setConfirming(null)}

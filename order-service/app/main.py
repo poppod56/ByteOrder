@@ -99,6 +99,9 @@ def _run_migrations():
         # the cashier's screen to be closed rather than silently counting as paid.
         conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_at TIMESTAMP"))
         conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS bill_id VARCHAR"))
+        # Nullable with no default: a bill closed before this existed genuinely
+        # has no recorded method, and guessing "cash" would falsify the till.
+        conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS payment_method VARCHAR"))
         # The two hot reads — the customer app's "already ordered" list and the
         # cashier's open tables — both filter on exactly these three columns.
         conn.execute(text("""

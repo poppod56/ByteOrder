@@ -1,6 +1,6 @@
 from unittest.mock import MagicMock, patch
 import requests
-from byteorder_printer.print_client import _format_order, run
+from byteorder_printer.print_client import _format_order, _format_receipt, run
 
 
 # ── _format_order ─────────────────────────────────────────────────────────────
@@ -199,3 +199,87 @@ def test_format_order_stays_quiet_about_money_when_unpriced():
     receipt = _format_order(order)
     assert "2x Burger" in receipt
     assert "TOTAL" not in receipt
+
+
+# ── _format_receipt ───────────────────────────────────────────────────────────
+# Mirrors print-service's format_receipt over the same payload: whichever
+# printer backend a kitchen runs, the bill has to say the same thing.
+
+RECEIPT = {
+    "kind": "receipt",
+    "bill_id": "bill-1",
+    "table_label": "Table 4",
+    "payment_method": "cash",
+    "total": 16000,
+    "currency": "THB",
+    "orders": [
+        {"order_number": "BO-001", "items": [
+            {"name": "Burger", "quantity": 1, "unit_price": 12000,
+             "ingredients": [{"name": "Onion", "included": False}], "options": []},
+        ]},
+        {"order_number": "BO-002", "items": [
+            {"name": "Fries", "quantity": 1, "unit_price": 4000},
+        ]},
+    ],
+}
+
+
+def test_receipt_covers_every_order_settled_together():
+    text = _format_receipt(RECEIPT)
+    assert "RECEIPT" in text
+    assert "BO-001" in text and "BO-002" in text
+    assert "1x Burger" in text and "1x Fries" in text
+
+
+def test_receipt_shows_the_table_the_total_and_the_method():
+    text = _format_receipt(RECEIPT)
+    assert "TABLE: Table 4" in text
+    assert "TOTAL: 160.00 THB" in text
+    assert "Paid by: Cash" in text
+
+
+def test_receipt_keeps_what_was_left_off_the_dish():
+    assert "NO:   Onion" in _format_receipt(RECEIPT)
+
+
+def test_receipt_follows_the_kitchens_language():
+    text = _format_receipt({**RECEIPT, "ticket_language": "th"})
+    assert "ใบเสร็จ" in text
+    assert "ชำระโดย: เงินสด" in text
+
+
+def test_receipt_omits_the_total_for_an_unpriced_menu():
+    assert "TOTAL" not in _format_receipt({**RECEIPT, "total": None})
+
+
+def test_receipt_prints_an_unknown_method_rather_than_dropping_it():
+    assert "Paid by: promptpay" in _format_receipt({**RECEIPT, "payment_method": "promptpay"})
+
+
+def test_run_prints_a_receipt_message_as_a_bill():
+    """Receipts arrive on the same stream as tickets, told apart by `kind`."""
+    import json
+
+    def fake_get(*args, **kwargs):
+        if getattr(fake_get, "called", False):
+            raise KeyboardInterrupt
+        fake_get.called = True
+        resp = MagicMock()
+        resp.status_code = 200
+        resp.raise_for_status = MagicMock()
+        return resp
+
+    with patch("byteorder_printer.print_client.requests.get", side_effect=fake_get), \
+         patch("byteorder_printer.print_client.SSEClient") as mock_sse_cls, \
+         patch("byteorder_printer.print_client._send_to_printer") as send, \
+         patch("byteorder_printer.print_client.time"):
+
+        mock_sse_cls.return_value.events.return_value = iter(
+            [MagicMock(data=json.dumps(RECEIPT))]
+        )
+        try:
+            run("http://test", "AA:BB:CC:DD:EE:FF")
+        except KeyboardInterrupt:
+            pass
+
+    assert "RECEIPT" in send.call_args.args[0]

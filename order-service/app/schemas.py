@@ -71,6 +71,7 @@ class OrderOut(BaseModel):
     total: Optional[int] = None
     settled_at: Optional[datetime] = None
     bill_id: Optional[str] = None
+    payment_method: Optional[str] = None
     items: list[OrderItemOut] = []
     queue_position: Optional[int] = None
     model_config = {"from_attributes": True}
@@ -113,6 +114,10 @@ class TableSettleIn(BaseModel):
     marked paid without anyone having collected the money for it.
     """
     order_ids: list[int] = []
+    # Recorded for the end-of-day reconciliation, not enforced: the money has
+    # already changed hands by the time this is sent. Optional, so a kitchen
+    # that only ever takes cash need not answer the question.
+    payment_method: Optional[str] = None
 
 
 class OpenTableOut(BaseModel):
@@ -139,6 +144,7 @@ class OpenTableOut(BaseModel):
 
 class SettleOut(BaseModel):
     bill_id: str
+    payment_method: Optional[str] = None
     settled: list[OrderOut] = []
     # Anything still unpaid for the table once this bill closed — normally empty,
     # non-empty exactly when an order landed while the cashier was confirming.

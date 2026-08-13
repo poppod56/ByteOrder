@@ -93,6 +93,30 @@ def session_is_stale(orders: list[models.Order]) -> bool:
     return newest < utcnow() - timedelta(hours=settings.table_session_hours)
 
 
+def ticket_items(order: models.Order) -> list[dict]:
+    """One order's lines in the shape both printer formatters expect.
+
+    Shared with the receipt published at checkout so a dish reads the same on the
+    kitchen ticket and on the bill.
+    """
+    return [
+        {
+            "name": oi.menu_item_name,
+            "quantity": oi.quantity,
+            "unit_price": oi.unit_price,
+            "ingredients": [
+                {"name": i.ingredient_name, "included": i.included, "price_delta": i.price_delta}
+                for i in oi.ingredients
+            ],
+            "options": [
+                {"group": o.group_name, "name": o.option_name, "price_delta": o.price_delta}
+                for o in oi.options
+            ],
+        }
+        for oi in order.items
+    ]
+
+
 def _resolve_table(table_code: str | None, kitchen_id: str, db: Session) -> models.Table | None:
     """Look up the table for a scanned QR code, or None for a takeaway order.
 
@@ -230,6 +254,9 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
     # format_order() and pi-printer-client's _format_order() — so a field added
     # here has to be rendered in both or the printer backends disagree.
     order_payload = json.dumps({
+        # Both formatters now also receive receipts on this channel. Absent means
+        # a kitchen ticket, so messages published by an older build still print.
+        "kind": "order",
         "order_id": order.id,
         "order_number": order.order_number,
         "customer_name": order.customer_name,
@@ -238,22 +265,7 @@ def create_order(data: schemas.OrderIn, db: Session = Depends(get_db), kitchen_i
         "total": order.total,
         "currency": load_currency(kitchen_id, db),
         "ticket_language": load_language(kitchen_id, db),
-        "items": [
-            {
-                "name": oi.menu_item_name,
-                "quantity": oi.quantity,
-                "unit_price": oi.unit_price,
-                "ingredients": [
-                    {"name": i.ingredient_name, "included": i.included, "price_delta": i.price_delta}
-                    for i in oi.ingredients
-                ],
-                "options": [
-                    {"group": o.group_name, "name": o.option_name, "price_delta": o.price_delta}
-                    for o in oi.options
-                ],
-            }
-            for oi in order.items
-        ],
+        "items": ticket_items(order),
     })
     redis.publish("new_orders", order_payload)
     # Kitchen-scoped channel for Pi printer clients

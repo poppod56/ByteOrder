@@ -5,6 +5,7 @@ down tells the system that the last party has gone. The cashier confirming
 payment is what separates one party from the next — until that happens, the
 orders on the table are the current party's, and afterwards they are history.
 """
+import json
 from datetime import timedelta
 
 import pytest
@@ -323,3 +324,113 @@ def test_another_kitchens_open_tables_are_not_listed(client, db):
     db.commit()
 
     assert client.get("/orders/tables/open").json() == []
+
+
+# ── How the money came in ────────────────────────────────────────────────────
+
+def test_the_method_is_recorded_on_every_order_in_the_bill(client):
+    table = _make_table(client, "Table 1")
+    orders = [_place(client, table), _place(client, table)]
+
+    body = client.post(
+        f"/orders/tables/{table['id']}/settle",
+        json={"order_ids": [o["id"] for o in orders], "payment_method": "transfer"},
+    ).json()
+
+    assert body["payment_method"] == "transfer"
+    assert {o["payment_method"] for o in body["settled"]} == {"transfer"}
+
+
+def test_a_kitchen_that_only_takes_cash_need_not_answer(client):
+    table = _make_table(client, "Table 1")
+    body = _settle(client, table, [_place(client, table)]).json()
+
+    assert body["payment_method"] is None
+
+
+def test_an_invented_method_is_rejected(client):
+    """The till is counted by method, so free text would fragment the columns."""
+    table = _make_table(client, "Table 1")
+    order = _place(client, table)
+
+    response = client.post(
+        f"/orders/tables/{table['id']}/settle",
+        json={"order_ids": [order["id"]], "payment_method": "bitcoin"},
+    )
+
+    assert response.status_code == 400
+    # And nothing was settled on the way to being rejected.
+    assert client.get(f"/orders/by-table/{table['code']}").json() != []
+
+
+def test_the_method_is_normalised_so_the_totals_group(client):
+    table = _make_table(client, "Table 1")
+    body = client.post(
+        f"/orders/tables/{table['id']}/settle",
+        json={"order_ids": [_place(client, table)["id"]], "payment_method": " Cash "},
+    ).json()
+
+    assert body["payment_method"] == "cash"
+
+
+# ── The receipt that prints at the till ──────────────────────────────────────
+
+def _receipts(mock_redis):
+    """Payloads published to the ticket channel that are bills, not orders."""
+    out = []
+    for call in mock_redis.publish.call_args_list:
+        channel, raw = call.args
+        if channel.startswith("new_orders"):
+            payload = json.loads(raw)
+            if payload.get("kind") == "receipt":
+                out.append((channel, payload))
+    return out
+
+
+def test_settling_publishes_one_receipt_to_both_printer_backends(client, mock_redis):
+    table = _make_table(client, "Table 1")
+    _settle(client, table, [_place(client, table), _place(client, table)])
+
+    channels = [c for c, _ in _receipts(mock_redis)]
+    assert sorted(channels) == ["new_orders", "new_orders:test-kitchen"]
+
+
+def test_the_receipt_carries_the_whole_bill(client, mock_redis, priced_menu):
+    table = _make_table(client, "Table 1")
+    first, second = _place(client, table), _place(client, table)
+
+    body = _settle(client, table, [first, second]).json()
+    _, receipt = _receipts(mock_redis)[0]
+
+    assert receipt["bill_id"] == body["bill_id"]
+    assert receipt["table_label"] == "Table 1"
+    assert receipt["total"] == 24000
+    assert [o["order_number"] for o in receipt["orders"]] == [first["order_number"], second["order_number"]]
+    assert receipt["orders"][0]["items"][0]["name"] == "Cheeseburger"
+
+
+def test_the_receipt_says_how_it_was_paid(client, mock_redis):
+    table = _make_table(client, "Table 1")
+    client.post(
+        f"/orders/tables/{table['id']}/settle",
+        json={"order_ids": [_place(client, table)["id"]], "payment_method": "card"},
+    )
+
+    assert _receipts(mock_redis)[0][1]["payment_method"] == "card"
+
+
+def test_the_receipt_has_no_total_when_the_menu_is_unpriced(client, mock_redis):
+    table = _make_table(client, "Table 1")
+    _settle(client, table, [_place(client, table)])
+
+    assert _receipts(mock_redis)[0][1]["total"] is None
+
+
+def test_a_kitchen_ticket_is_marked_as_one(client, mock_redis):
+    """Both formatters read `kind`; a ticket must not be mistaken for a bill."""
+    table = _make_table(client, "Table 1")
+    _place(client, table)
+
+    tickets = [json.loads(c.args[1]) for c in mock_redis.publish.call_args_list
+               if c.args[0] == "new_orders"]
+    assert [t["kind"] for t in tickets] == ["order"]

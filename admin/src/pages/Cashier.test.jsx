@@ -94,8 +94,36 @@ describe('Cashier', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Confirm paid' }))
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/orders/tables/1/settle', { order_ids: [1, 2] },
+      '/orders/tables/1/settle', { order_ids: [1, 2], payment_method: 'cash' },
     ))
+  })
+
+  it('records how the table paid', async () => {
+    mockOpen([openTable()])
+    api.post.mockResolvedValue({ data: { bill_id: 'b1', settled: [], outstanding: [] } })
+    render(<Cashier />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm payment' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Transfer' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm paid' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/orders/tables/1/settle', { order_ids: [1], payment_method: 'transfer' },
+    ))
+  })
+
+  it('starts each table back at cash rather than inheriting the last one', async () => {
+    mockOpen([openTable(), openTable({ table_id: 2, label: 'Table 2', orders: [order(9)] })])
+    api.post.mockResolvedValue({ data: { bill_id: 'b1', settled: [], outstanding: [] } })
+    render(<Cashier />)
+
+    const [firstPay, secondPay] = await screen.findAllByRole('button', { name: 'Confirm payment' })
+    await userEvent.click(firstPay)
+    await userEvent.click(screen.getByRole('button', { name: 'Card' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }))
+
+    await userEvent.click(secondPay)
+    expect(screen.getByRole('button', { name: 'Cash' })).toHaveAttribute('aria-pressed', 'true')
   })
 
   it('asks for confirmation before taking any money', async () => {

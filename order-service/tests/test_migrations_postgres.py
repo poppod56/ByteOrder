@@ -206,7 +206,7 @@ def test_existing_orders_start_out_unpaid(legacy_db, monkeypatch):
         cols = {r[0] for r in conn.execute(text("""
             SELECT column_name FROM information_schema.columns WHERE table_name = 'orders'
         """)).fetchall()}
-        assert {"settled_at", "bill_id"} <= cols
+        assert {"settled_at", "bill_id", "payment_method"} <= cols
 
         unsettled = conn.execute(text(
             "SELECT count(*) FROM orders WHERE settled_at IS NULL"

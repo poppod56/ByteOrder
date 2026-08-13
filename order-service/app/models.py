@@ -56,6 +56,9 @@ class Order(Base):
     # Orders closed by one press of "confirm payment" share this, so a bill can
     # be reconciled or reprinted as a unit without a separate sessions table.
     bill_id = Column(String, nullable=True, index=True)
+    # How the bill was paid, for reconciling the till at the end of the day.
+    # NULL on an unsettled order, and on bills closed before this was recorded.
+    payment_method = Column(String, nullable=True)
     created_at = Column(DateTime, default=utcnow)
     updated_at = Column(DateTime, default=utcnow, onupdate=utcnow)
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")

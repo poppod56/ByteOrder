@@ -22,10 +22,16 @@ TICKET_LABELS = {
     "en": {
         "table": "TABLE", "customer": "Customer", "with": "With",
         "no": "NO", "note": "Note", "total": "TOTAL", "ea": "ea",
+        "receipt": "RECEIPT", "order": "Order", "paid_by": "Paid by",
+        "thank_you": "Thank you",
+        "cash": "Cash", "transfer": "Transfer", "card": "Card", "other": "Other",
     },
     "th": {
         "table": "โต๊ะ", "customer": "ลูกค้า", "with": "ใส่",
         "no": "ไม่ใส่", "note": "หมายเหตุ", "total": "ยอดรวม", "ea": "ต่อชิ้น",
+        "receipt": "ใบเสร็จ", "order": "ออเดอร์", "paid_by": "ชำระโดย",
+        "thank_you": "ขอบคุณครับ/ค่ะ",
+        "cash": "เงินสด", "transfer": "โอน", "card": "บัตร", "other": "อื่นๆ",
     },
 }
 
@@ -35,6 +41,72 @@ def _money(minor, currency: str) -> str:
     if minor is None:
         return ""
     return f"{minor / 100:,.2f} {currency}"
+
+
+def _item_lines(item: dict, currency: str, labels: dict) -> list[str]:
+    """One dish with its choices, as it reads on both the ticket and the bill."""
+    name = item.get("name", "?")
+    qty = item.get("quantity", 1)
+    notes = item.get("notes") or ""
+    unit = item.get("unit_price")
+    lines = [f"  {qty}x {name}" + (f"   {_money(unit, currency)} {labels['ea']}" if unit is not None else "")]
+    if notes:
+        lines.append(f"     * {notes}")
+
+    ingredients = item.get("ingredients") or []
+    included = [i["name"] for i in ingredients if i.get("included")]
+    excluded = [i["name"] for i in ingredients if not i.get("included")]
+    if included:
+        lines.append(f"     {labels['with']}: {', '.join(included)}")
+    for i in ingredients:
+        if i.get("included") and i.get("price_delta"):
+            lines.append(f"       + {i['name']}  {_money(i['price_delta'], currency)}")
+    if excluded:
+        lines.append(f"     {labels['no']}:   {', '.join(excluded)}")
+
+    options_by_group: dict[str, list[str]] = {}
+    for opt in item.get("options") or []:
+        options_by_group.setdefault(opt.get("group", ""), []).append(opt["name"])
+    for group, opts in options_by_group.items():
+        lines.append(f"     {group}: {', '.join(opts)}")
+    for opt in item.get("options") or []:
+        if opt.get("price_delta"):
+            lines.append(f"       + {opt['name']}  {_money(opt['price_delta'], currency)}")
+
+    return lines
+
+
+def _format_receipt(receipt: dict) -> str:
+    """The bill for one table, printed when the cashier confirms payment.
+
+    Mirrors print-service's format_receipt() over the same payload — the two
+    printer backends must not disagree about what a bill says.
+    """
+    lang = receipt.get("ticket_language") or "en"
+    labels = TICKET_LABELS.get(lang, TICKET_LABELS["en"])
+    currency = receipt.get("currency") or "THB"
+
+    lines = ["=" * 32, labels["receipt"], "=" * 32]
+    if receipt.get("table_label"):
+        lines.append(f"{labels['table']}: {receipt['table_label']}")
+
+    for order in receipt.get("orders") or []:
+        lines.append(f"{labels['order']}: {order.get('order_number', '')}")
+        for item in order.get("items") or []:
+            lines += _item_lines(item, currency, labels)
+
+    if receipt.get("total") is not None:
+        lines.append("-" * 32)
+        lines.append(f"{labels['total']}: {_money(receipt['total'], currency)}")
+
+    method = receipt.get("payment_method")
+    if method:
+        # An unrecognised method still prints, rather than the bill silently
+        # claiming nothing was paid.
+        lines.append(f"{labels['paid_by']}: {labels.get(method, method)}")
+
+    lines += ["=" * 32, labels["thank_you"], ""]
+    return "\n".join(lines)
 
 
 def _format_order(order: dict) -> str:
@@ -66,35 +138,8 @@ def _format_order(order: dict) -> str:
 
     currency = order.get("currency") or "THB"
 
-    items = order.get("items") or []
-    for item in items:
-        name = item.get("name", "?")
-        qty = item.get("quantity", 1)
-        notes = item.get("notes") or ""
-        unit = item.get("unit_price")
-        lines.append(f"  {qty}x {name}" + (f"   {_money(unit, currency)} {labels['ea']}" if unit is not None else ""))
-        if notes:
-            lines.append(f"     * {notes}")
-
-        ingredients = item.get("ingredients") or []
-        included = [i["name"] for i in ingredients if i.get("included")]
-        excluded = [i["name"] for i in ingredients if not i.get("included")]
-        if included:
-            lines.append(f"     {labels['with']}: {', '.join(included)}")
-        for i in ingredients:
-            if i.get("included") and i.get("price_delta"):
-                lines.append(f"       + {i['name']}  {_money(i['price_delta'], currency)}")
-        if excluded:
-            lines.append(f"     {labels['no']}:   {', '.join(excluded)}")
-
-        options_by_group: dict[str, list[str]] = {}
-        for opt in item.get("options") or []:
-            options_by_group.setdefault(opt.get("group", ""), []).append(opt["name"])
-        for group, opts in options_by_group.items():
-            lines.append(f"     {group}: {', '.join(opts)}")
-        for opt in item.get("options") or []:
-            if opt.get("price_delta"):
-                lines.append(f"       + {opt['name']}  {_money(opt['price_delta'], currency)}")
+    for item in order.get("items") or []:
+        lines += _item_lines(item, currency, labels)
 
     if order.get("notes"):
         lines.append("")
@@ -140,7 +185,9 @@ def run(api_base: str, mac_address: str) -> None:
                     continue
                 try:
                     order = json.loads(event.data)
-                    text = _format_order(order)
+                    # No `kind` means a kitchen ticket from an older backend.
+                    text = (_format_receipt(order) if order.get("kind") == "receipt"
+                            else _format_order(order))
                     _send_to_printer(text)
                 except (json.JSONDecodeError, requests.RequestException) as exc:
                     log.error("Print error: %s", exc)

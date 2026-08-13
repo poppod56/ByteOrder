@@ -8,7 +8,7 @@ import pytest
 # SQLAlchemy create_engine is lazy and won't connect until the engine is used.
 os.environ.setdefault("DATABASE_URL", "sqlite:///./test_print.db")
 
-from app.main import _is_safe_printer_url, format_order, process_order
+from app.main import _is_safe_printer_url, format_order, format_receipt, process_order
 
 
 # ── _is_safe_printer_url ──────────────────────────────────────────────────────
@@ -297,3 +297,104 @@ def test_format_order_prints_modifier_charges():
     assert "+ Bacon  20.00 GBP" in text
     assert "+ Large  15.00 GBP" in text
     assert "TOTAL: 155.00 GBP" in text
+
+
+# ── format_receipt ────────────────────────────────────────────────────────────
+# The bill the cashier hands over, printed on the same channel as kitchen
+# tickets and told apart by `kind`.
+
+RECEIPT = {
+    "kind": "receipt",
+    "bill_id": "bill-1",
+    "kitchen_id": "k1",
+    "table_label": "Table 4",
+    "payment_method": "cash",
+    "total": 24000,
+    "currency": "THB",
+    "orders": [
+        {"order_number": "BO-001", "items": [
+            {"name": "Cheeseburger", "quantity": 2, "unit_price": 12000,
+             "ingredients": [{"name": "Bacon", "included": True, "price_delta": 2000}],
+             "options": [{"group": "Size", "name": "Large", "price_delta": 0}]},
+        ]},
+        {"order_number": "BO-002", "items": [
+            {"name": "Fries", "quantity": 1, "unit_price": 4000, "ingredients": [], "options": []},
+        ]},
+    ],
+}
+
+
+def _receipt_text(receipt, kitchen="Test Kitchen"):
+    with patch("app.main.get_kitchen_name", return_value=kitchen):
+        return format_receipt(receipt, "k1")["text"]
+
+
+def test_receipt_covers_every_order_settled_together():
+    """A table that ordered twice gets one bill, not two."""
+    text = _receipt_text(RECEIPT)
+    assert "BO-001" in text and "BO-002" in text
+    assert "Cheeseburger" in text and "Fries" in text
+
+
+def test_receipt_shows_where_it_came_from_and_what_it_came_to():
+    text = _receipt_text(RECEIPT)
+    assert "Test Kitchen" in text
+    assert "RECEIPT" in text
+    assert "TABLE: Table 4" in text
+    assert "TOTAL: 240.00 THB" in text
+
+
+def test_receipt_records_how_it_was_paid():
+    assert "Paid by: Cash" in _receipt_text(RECEIPT)
+    assert "Paid by: Transfer" in _receipt_text({**RECEIPT, "payment_method": "transfer"})
+
+
+def test_receipt_prints_an_unknown_method_rather_than_dropping_it():
+    """Silently omitting it would read as a bill nobody paid."""
+    assert "Paid by: promptpay" in _receipt_text({**RECEIPT, "payment_method": "promptpay"})
+
+
+def test_receipt_omits_the_payment_line_when_none_was_recorded():
+    text = _receipt_text({**RECEIPT, "payment_method": None})
+    assert "Paid by" not in text
+
+
+def test_receipt_omits_the_total_for_an_unpriced_menu():
+    text = _receipt_text({**RECEIPT, "total": None})
+    assert "TOTAL" not in text
+
+
+def test_receipt_follows_the_kitchens_language():
+    text = _receipt_text({**RECEIPT, "ticket_language": "th"})
+    assert "ใบเสร็จ" in text
+    assert "ชำระโดย: เงินสด" in text
+    # Dish names are whatever the kitchen typed and are never translated.
+    assert "Cheeseburger" in text
+
+
+def test_receipt_keeps_the_choices_that_were_charged_for():
+    text = _receipt_text(RECEIPT)
+    assert "With: Bacon" in text
+    assert "Size: Large" in text
+    assert "+ Bacon  20.00 THB" in text
+
+
+def test_a_receipt_message_is_printed_as_a_bill_not_a_ticket():
+    with patch("app.main.get_printer_url", return_value="http://192.168.1.50"), \
+         patch("app.main.get_kitchen_name", return_value="K"), \
+         patch("app.main.send_to_printer", return_value=True) as send:
+        process_order(json.dumps(RECEIPT).encode())
+
+    assert "RECEIPT" in send.call_args.args[0]["text"]
+
+
+def test_a_message_without_a_kind_is_still_a_kitchen_ticket():
+    """Payloads published by an older backend must keep printing."""
+    legacy = {"order_number": "BO-9", "customer_name": "Alice", "kitchen_id": "k1", "items": []}
+    with patch("app.main.get_printer_url", return_value="http://192.168.1.50"), \
+         patch("app.main.get_kitchen_name", return_value="K"), \
+         patch("app.main.send_to_printer", return_value=True) as send:
+        process_order(json.dumps(legacy).encode())
+
+    assert "BO-9" in send.call_args.args[0]["text"]
+    assert "RECEIPT" not in send.call_args.args[0]["text"]

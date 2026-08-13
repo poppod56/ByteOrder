@@ -121,10 +121,14 @@ TICKET_LABELS = {
     "en": {
         "order": "Order", "table": "TABLE", "name": "Name",
         "with": "With", "no": "NO", "total": "TOTAL", "ea": "ea",
+        "receipt": "RECEIPT", "paid_by": "Paid by", "thank_you": "Thank you",
+        "cash": "Cash", "transfer": "Transfer", "card": "Card", "other": "Other",
     },
     "th": {
         "order": "ออเดอร์", "table": "โต๊ะ", "name": "ชื่อ",
         "with": "ใส่", "no": "ไม่ใส่", "total": "ยอดรวม", "ea": "ต่อชิ้น",
+        "receipt": "ใบเสร็จ", "paid_by": "ชำระโดย", "thank_you": "ขอบคุณครับ/ค่ะ",
+        "cash": "เงินสด", "transfer": "โอน", "card": "บัตร", "other": "อื่นๆ",
     },
 }
 
@@ -135,6 +139,74 @@ def money(minor: int | None, currency: str) -> str:
     if minor is None:
         return ""
     return f"{minor / 100:,.2f} {currency}"
+
+
+def _item_lines(item: dict, currency: str, labels: dict) -> list[str]:
+    """One dish with its choices, as it reads on both the ticket and the bill."""
+    unit = item.get("unit_price")
+    qty = item.get("quantity", 1)
+    # Quantity always shown: "1x" reads the same way as "3x" and removes any
+    # doubt about whether a count was simply left off.
+    head = f">> {qty}x {item['name']}"
+    lines = [head + (f"   {money(unit, currency)} {labels['ea']}" if unit is not None else "")]
+
+    included = [i["name"] for i in item.get("ingredients", []) if i["included"]]
+    excluded = [i["name"] for i in item.get("ingredients", []) if not i["included"]]
+
+    if included:
+        lines.append(f"   {labels['with']}: {', '.join(included)}")
+    for i in item.get("ingredients", []):
+        if i["included"] and i.get("price_delta"):
+            lines.append(f"     + {i['name']}  {money(i['price_delta'], currency)}")
+    if excluded:
+        lines.append(f"   {labels['no']}:   {', '.join(excluded)}")
+
+    options_by_group: dict[str, list[str]] = {}
+    for opt in item.get("options", []):
+        options_by_group.setdefault(opt["group"], []).append(opt["name"])
+    for group, opts in options_by_group.items():
+        lines.append(f"   {group}: {', '.join(opts)}")
+    for opt in item.get("options", []):
+        if opt.get("price_delta"):
+            lines.append(f"     + {opt['name']}  {money(opt['price_delta'], currency)}")
+
+    return lines
+
+
+def format_receipt(receipt: dict, kitchen_id: str) -> dict:
+    """The bill for one table, printed when the cashier confirms payment.
+
+    Covers every order settled together, so a table that ordered three times
+    gets one piece of paper rather than three.
+    """
+    kitchen = get_kitchen_name(kitchen_id)
+    currency = receipt.get("currency") or "THB"
+    lang = receipt.get("ticket_language") or "en"
+    labels = TICKET_LABELS.get(lang, TICKET_LABELS["en"])
+
+    lines = [kitchen, labels["receipt"]]
+    if receipt.get("table_label"):
+        lines.append(f"{labels['table']}: {receipt['table_label']}")
+    lines.append("")
+
+    for order in receipt.get("orders", []):
+        lines.append(f"{labels['order']}: {order.get('order_number', '')}")
+        for item in order.get("items", []):
+            lines += _item_lines(item, currency, labels)
+        lines.append("")
+
+    if receipt.get("total") is not None:
+        lines.append("-" * 32)
+        lines.append(f"{labels['total']}: {money(receipt['total'], currency)}")
+
+    method = receipt.get("payment_method")
+    if method:
+        # An unrecognised method still prints, rather than the bill silently
+        # claiming nothing was paid.
+        lines.append(f"{labels['paid_by']}: {labels.get(method, method)}")
+
+    lines += ["", labels["thank_you"], ""]
+    return {"text": "\n".join(lines)}
 
 
 def format_order(order: dict, kitchen_id: str) -> dict:
@@ -157,33 +229,7 @@ def format_order(order: dict, kitchen_id: str) -> dict:
     ]
 
     for item in order["items"]:
-        unit = item.get("unit_price")
-        qty = item.get("quantity", 1)
-        # Quantity always shown: "1x" reads the same way as "3x" and removes any
-        # doubt about whether a count was simply left off.
-        head = f">> {qty}x {item['name']}"
-        lines.append(head + (f"   {money(unit, currency)} {labels['ea']}" if unit is not None else ""))
-
-        included = [i["name"] for i in item.get("ingredients", []) if i["included"]]
-        excluded = [i["name"] for i in item.get("ingredients", []) if not i["included"]]
-
-        if included:
-            lines.append(f"   {labels['with']}: {', '.join(included)}")
-        for i in item.get("ingredients", []):
-            if i["included"] and i.get("price_delta"):
-                lines.append(f"     + {i['name']}  {money(i['price_delta'], currency)}")
-        if excluded:
-            lines.append(f"   {labels['no']}:   {', '.join(excluded)}")
-
-        options_by_group: dict[str, list[str]] = {}
-        for opt in item.get("options", []):
-            options_by_group.setdefault(opt["group"], []).append(opt["name"])
-        for group, opts in options_by_group.items():
-            lines.append(f"   {group}: {', '.join(opts)}")
-        for opt in item.get("options", []):
-            if opt.get("price_delta"):
-                lines.append(f"     + {opt['name']}  {money(opt['price_delta'], currency)}")
-
+        lines += _item_lines(item, currency, labels)
         lines.append("")
 
     if order.get("total") is not None:
@@ -216,7 +262,13 @@ def process_order(message_data: bytes):
         log.warning("Order %s has no kitchen_id — skipping", order.get("order_number"))
         return
 
-    log.info("Processing order %s for %s (kitchen: %s)", order.get("order_number"), order.get("customer_name"), kitchen_id)
+    # A message with no `kind` is a kitchen ticket published by an older build.
+    is_receipt = order.get("kind") == "receipt"
+    if is_receipt:
+        log.info("Processing receipt %s for table %s (kitchen: %s)",
+                 order.get("bill_id"), order.get("table_label"), kitchen_id)
+    else:
+        log.info("Processing order %s for %s (kitchen: %s)", order.get("order_number"), order.get("customer_name"), kitchen_id)
 
     printer_url = get_printer_url(kitchen_id)
     if not printer_url:
@@ -226,12 +278,15 @@ def process_order(message_data: bytes):
         log.error("Printer URL is not a safe external URL — refusing to connect for order %s", order.get("order_number"))
         return
 
-    payload = format_order(order, kitchen_id)
+    payload = format_receipt(order, kitchen_id) if is_receipt else format_order(order, kitchen_id)
 
     if tracer:
         with tracer.start_as_current_span("print_order") as span:
+            span.set_attribute("print.kind", "receipt" if is_receipt else "order")
+            # Empty on a receipt, which carries a bill_id instead of either.
             span.set_attribute("order.number", order.get("order_number", ""))
             span.set_attribute("order.customer", order.get("customer_name", ""))
+            span.set_attribute("bill.id", order.get("bill_id", ""))
             span.set_attribute("order.kitchen_id", kitchen_id)
             span.set_attribute("printer.url", printer_url)
             success = send_to_printer(payload, printer_url)

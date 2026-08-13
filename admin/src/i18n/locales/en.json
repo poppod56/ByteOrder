@@ -76,6 +76,13 @@
     "checkItems": "Check items",
     "noInline": "No",
     "confirmPayment": "Confirm payment",
+    "paidBy": "Paid by",
+    "method": {
+      "cash": "Cash",
+      "transfer": "Transfer",
+      "card": "Card",
+      "other": "Other"
+    },
     "takePaymentFor": "Take payment for {{table}}?",
     "settleNote": "{{count}} order will be marked paid and cleared from the customer's phone. Nothing is deleted — they stay in order history.",
     "settleNote_other": "{{count}} orders will be marked paid and cleared from the customer's phone. Nothing is deleted — they stay in order history.",

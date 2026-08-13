@@ -8,8 +8,9 @@ from sqlalchemy.orm import Session
 from app import models, schemas
 from app.auth import get_kitchen_id
 from app.database import get_db
+from app.pricing import load_currency, load_language
 from app.redis_client import get_redis
-from app.routers.orders import session_is_stale
+from app.routers.orders import session_is_stale, ticket_items
 from app.timeutil import utcnow
 
 router = APIRouter(prefix="/orders/tables", tags=["tables"])
@@ -137,6 +138,10 @@ def create_tables(
 
 # ── Cashier ───────────────────────────────────────────────────────────────────
 
+# What the till can record. A closed set because these are counted at the end of
+# the day — free text would produce "cash", "Cash" and "เงินสด" as three columns.
+PAYMENT_METHODS = ("cash", "transfer", "card", "other")
+
 def _unsettled(kitchen_id: str, db: Session, table_id: int | None = None) -> list[models.Order]:
     """Orders with money still owed on them, oldest first.
 
@@ -227,6 +232,13 @@ def settle_table(
     if not ids:
         raise HTTPException(status_code=400, detail="No orders to settle")
 
+    method = (data.payment_method or "").strip().lower() or None
+    if method and method not in PAYMENT_METHODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid payment_method. Must be one of: {PAYMENT_METHODS}",
+        )
+
     orders = db.query(models.Order).filter(
         models.Order.kitchen_id == kitchen_id,
         models.Order.table_id == table.id,
@@ -246,22 +258,47 @@ def settle_table(
     for order in orders:
         order.settled_at = now
         order.bill_id = bill_id
+        order.payment_method = method
     db.commit()
     for order in orders:
         db.refresh(order)
 
     outstanding = _unsettled(kitchen_id, db, table.id)
 
+    redis = get_redis()
     # The customer's phone reloads its list off this channel, so the table clears
     # itself without anyone having to close the tab.
-    get_redis().publish(f"queue_updates:{kitchen_id}", json.dumps({
+    redis.publish(f"queue_updates:{kitchen_id}", json.dumps({
         "event": "bill_settled",
         "table_id": table.id,
         "bill_id": bill_id,
     }))
 
+    # The receipt goes out on the same channels as kitchen tickets, told apart by
+    # `kind`. Both formatters — print-service's and pi-printer-client's — render
+    # it, so whichever printer backend a kitchen runs prints the same bill.
+    priced = [o.total for o in orders if o.total is not None]
+    receipt = json.dumps({
+        "kind": "receipt",
+        "bill_id": bill_id,
+        "kitchen_id": kitchen_id,
+        "table_label": table.label,
+        "payment_method": method,
+        "settled_at": now.isoformat(),
+        "total": sum(priced) if priced else None,
+        "currency": load_currency(kitchen_id, db),
+        "ticket_language": load_language(kitchen_id, db),
+        "orders": [
+            {"order_number": o.order_number, "items": ticket_items(o)}
+            for o in orders
+        ],
+    })
+    redis.publish("new_orders", receipt)
+    redis.publish(f"new_orders:{kitchen_id}", receipt)
+
     return schemas.SettleOut(
         bill_id=bill_id,
+        payment_method=method,
         settled=[schemas.OrderOut.model_validate(o) for o in orders],
         outstanding=[schemas.OrderOut.model_validate(o) for o in outstanding],
     )
