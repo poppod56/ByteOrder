@@ -398,3 +398,11 @@ def test_a_message_without_a_kind_is_still_a_kitchen_ticket():
 
     assert "BO-9" in send.call_args.args[0]["text"]
     assert "RECEIPT" not in send.call_args.args[0]["text"]
+
+
+def test_a_takeaway_receipt_names_the_customer_since_there_is_no_table():
+    takeaway = {**RECEIPT, "table_label": None, "customer_name": "Somchai"}
+    text = _receipt_text(takeaway)
+
+    assert "Name: Somchai" in text
+    assert "TABLE" not in text

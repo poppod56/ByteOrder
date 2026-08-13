@@ -369,9 +369,10 @@ def get_takings(
     which is the day whose cash drawer has to balance.
 
     The unpaid figures are the other way round — orders placed that day that
-    nobody has settled — so a short till has somewhere obvious to look. Takeaway
-    orders appear in neither: they are never settled through a table, so this
-    reports table trade only.
+    nobody has settled — so a short till has somewhere obvious to look. Both
+    figures cover takeaway as well as tables: a bill of one is still a bill, and
+    leaving it out made the total quietly short for a kitchen that sells much of
+    its food over the counter.
     """
     start, end, day = _local_day(date, tz_offset)
 
@@ -416,7 +417,6 @@ def get_takings(
         db.query(models.Order)
         .filter(
             models.Order.kitchen_id == kitchen_id,
-            models.Order.table_id.isnot(None),
             models.Order.settled_at.is_(None),
             models.Order.created_at >= start,
             models.Order.created_at < end,

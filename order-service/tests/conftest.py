@@ -74,7 +74,7 @@ def client(db, mock_redis):
 
     with patch.object(app.router, "lifespan_context", noop_lifespan), \
          patch("app.routers.orders.get_redis", return_value=mock_redis), \
-         patch("app.routers.tables.get_redis", return_value=mock_redis), \
+         patch("app.routers.cashier.get_redis", return_value=mock_redis), \
          patch("app.routers.printers.get_redis", return_value=mock_redis):
         with TestClient(app) as c:
             yield c

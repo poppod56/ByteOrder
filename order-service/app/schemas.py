@@ -106,11 +106,11 @@ class TableOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class TableSettleIn(BaseModel):
+class SettleIn(BaseModel):
     """The orders the cashier had on screen when they pressed confirm.
 
-    Sent explicitly rather than settling "everything open for this table": a
-    dish ordered while the cashier was reading the bill would otherwise be
+    Sent explicitly rather than settling "everything open for this bill": a
+    dish ordered while the cashier was reading the bill out would otherwise be
     marked paid without anyone having collected the money for it.
     """
     order_ids: list[int] = []
@@ -120,12 +120,18 @@ class TableSettleIn(BaseModel):
     payment_method: Optional[str] = None
 
 
-class OpenTableOut(BaseModel):
-    """One table with money still owed on it."""
-    table_id: int
-    code: str
+class OpenBillOut(BaseModel):
+    """Something that still owes money: one table, or one takeaway order.
+
+    A bill is a set of orders paid for together, which is why takeaway carries
+    the same shape — it is simply a bill of one, labelled by the customer rather
+    than by where they are sitting.
+    """
+    kind: str                       # "table" | "takeaway"
+    table_id: Optional[int] = None
+    code: Optional[str] = None
     label: str
-    active: bool
+    active: bool = True
     order_count: int
     # Sum of the orders that carry a price. NULL when the kitchen prices nothing,
     # so the cashier screen shows a checklist rather than a bogus 0.00 total.
@@ -167,8 +173,8 @@ class TakingsOut(BaseModel):
     order_count: int
     total: Optional[int] = None
     by_method: list[TakingsByMethodOut] = []
-    # Money not counted yet: tables that were still open when this was read.
-    # Shown alongside so a short till has an obvious first place to look.
+    # Money not counted yet: bills still open when this was read, tables and
+    # takeaway alike. Shown alongside so a short till has somewhere to look.
     unpaid_order_count: int = 0
     unpaid_total: Optional[int] = None
 

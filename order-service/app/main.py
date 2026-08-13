@@ -5,7 +5,7 @@ from sqlalchemy import text
 from fastapi.middleware.cors import CORSMiddleware
 from app.config import settings
 from app.database import engine, Base
-from app.routers import orders, printers, tables
+from app.routers import cashier, orders, printers, tables
 
 _otel_exporter_endpoint = os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT")
 if _otel_exporter_endpoint or settings.otel_endpoint:
@@ -97,6 +97,10 @@ def _run_migrations():
         # Cashier checkout. Both nullable: every order that predates this is
         # treated as unsettled, which is the safe side — an old bill shows up on
         # the cashier's screen to be closed rather than silently counting as paid.
+        settled_at_existed = conn.execute(text("""
+            SELECT 1 FROM information_schema.columns
+            WHERE table_name = 'orders' AND column_name = 'settled_at'
+        """)).fetchone() is not None
         conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS settled_at TIMESTAMP"))
         conn.execute(text("ALTER TABLE orders ADD COLUMN IF NOT EXISTS bill_id VARCHAR"))
         # Nullable with no default: a bill closed before this existed genuinely
@@ -108,6 +112,21 @@ def _run_migrations():
             CREATE INDEX IF NOT EXISTS orders_open_bills_idx
                 ON orders (kitchen_id, table_id, settled_at)
         """))
+        # Takeaway had no way of being settled before the cashier existed, so
+        # every takeaway order ever placed would arrive on the till as unpaid.
+        # A completed one was handed over the counter and paid for there, so it
+        # is closed at the time it was placed, with no method: "not recorded" is
+        # the truth, and inventing one would falsify the day it lands in.
+        #
+        # Guarded on settled_at having been absent a moment ago, which is only
+        # true the first time this runs. Without that guard, every restart would
+        # quietly mark genuinely unpaid takeaway as collected.
+        if not settled_at_existed:
+            conn.execute(text("""
+                UPDATE orders
+                SET settled_at = created_at, bill_id = gen_random_uuid()::text
+                WHERE table_id IS NULL AND settled_at IS NULL AND status = 'completed'
+            """))
         # A duplicate label makes the printed ticket ambiguous, so the column is
         # unique — but earlier builds allowed duplicates, so any existing ones are
         # suffixed first rather than letting the constraint fail startup.
@@ -149,10 +168,11 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# tables and printers must be registered before orders: the orders router owns
-# /orders/{order_id}, which would otherwise swallow /orders/tables and fail to
-# parse the literal segment as an int.
+# tables, cashier and printers must be registered before orders: the orders
+# router owns /orders/{order_id}, which would otherwise swallow /orders/tables
+# and /orders/cashier and fail to parse the literal segment as an int.
 app.include_router(tables.router)
+app.include_router(cashier.router)
 app.include_router(printers.router)
 app.include_router(orders.router)
 

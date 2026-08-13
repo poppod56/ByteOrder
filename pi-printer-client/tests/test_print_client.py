@@ -283,3 +283,10 @@ def test_run_prints_a_receipt_message_as_a_bill():
             pass
 
     assert "RECEIPT" in send.call_args.args[0]
+
+
+def test_a_takeaway_receipt_names_the_customer_since_there_is_no_table():
+    text = _format_receipt({**RECEIPT, "table_label": None, "customer_name": "Somchai"})
+
+    assert "Customer: Somchai" in text
+    assert "TABLE" not in text

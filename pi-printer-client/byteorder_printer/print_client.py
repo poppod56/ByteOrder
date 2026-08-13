@@ -77,7 +77,7 @@ def _item_lines(item: dict, currency: str, labels: dict) -> list[str]:
 
 
 def _format_receipt(receipt: dict) -> str:
-    """The bill for one table, printed when the cashier confirms payment.
+    """The bill for one table or one takeaway order, printed on payment.
 
     Mirrors print-service's format_receipt() over the same payload — the two
     printer backends must not disagree about what a bill says.
@@ -87,8 +87,11 @@ def _format_receipt(receipt: dict) -> str:
     currency = receipt.get("currency") or "THB"
 
     lines = ["=" * 32, labels["receipt"], "=" * 32]
+    # A takeaway bill has no table, so the customer is what identifies it.
     if receipt.get("table_label"):
         lines.append(f"{labels['table']}: {receipt['table_label']}")
+    elif receipt.get("customer_name"):
+        lines.append(f"{labels['customer']}: {receipt['customer_name']}")
 
     for order in receipt.get("orders") or []:
         lines.append(f"{labels['order']}: {order.get('order_number', '')}")

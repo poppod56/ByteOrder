@@ -13,6 +13,7 @@ Each test builds the pre-migration schema from scratch in its own schema
 namespace, so it never touches application data.
 """
 import os
+from datetime import datetime
 
 import pytest
 from sqlalchemy import create_engine, text
@@ -260,6 +261,52 @@ def test_existing_orders_start_out_unpaid(legacy_db, monkeypatch):
             "SELECT indexname FROM pg_indexes WHERE tablename = 'orders'"
         )).fetchall()}
         assert "orders_open_bills_idx" in indexes
+
+
+def test_collected_takeaway_does_not_arrive_at_the_till_as_unpaid(legacy_db, monkeypatch):
+    """Takeaway could not be settled before the cashier existed, so every one
+    ever placed would land on the till. A completed one went over the counter."""
+    with legacy_db.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO orders (public_id, kitchen_id, order_number, customer_name, status, created_at)
+            VALUES ('pid-ta1', 'kitchen-a', 'BO-20260101-010', 'Alice', 'completed', '2026-01-01 12:00'),
+                   ('pid-ta2', 'kitchen-a', 'BO-20260101-011', 'Bob', 'pending', '2026-01-01 12:05')
+        """))
+
+    _migrate(legacy_db, monkeypatch)
+
+    with legacy_db.connect() as conn:
+        rows = dict(conn.execute(text("""
+            SELECT customer_name, settled_at IS NOT NULL FROM orders WHERE public_id IN ('pid-ta1', 'pid-ta2')
+        """)).fetchall())
+        assert rows == {"Alice": True, "Bob": False}
+
+        # Closed at the time it was placed, and honest about not knowing how.
+        settled_at, method, bill = conn.execute(text("""
+            SELECT settled_at, payment_method, bill_id FROM orders WHERE public_id = 'pid-ta1'
+        """)).fetchone()
+        assert settled_at == datetime(2026, 1, 1, 12, 0)
+        assert method is None
+        assert bill is not None
+
+
+def test_a_restart_does_not_mark_unpaid_takeaway_as_collected(legacy_db, monkeypatch):
+    """The back-fill is one-shot. Run again it would settle real debts — a
+    takeaway order completed after the feature shipped is money still owed."""
+    _migrate(legacy_db, monkeypatch)
+
+    with legacy_db.begin() as conn:
+        conn.execute(text("""
+            INSERT INTO orders (public_id, kitchen_id, order_number, customer_name, status)
+            VALUES ('pid-ta3', 'kitchen-a', 'BO-20260101-012', 'Carol', 'completed')
+        """))
+
+    _migrate(legacy_db, monkeypatch)
+
+    with legacy_db.connect() as conn:
+        assert conn.execute(text(
+            "SELECT settled_at FROM orders WHERE public_id = 'pid-ta3'"
+        )).scalar() is None
 
 
 def test_migration_is_idempotent(legacy_db, monkeypatch):

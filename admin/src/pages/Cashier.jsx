@@ -13,6 +13,11 @@ function clockTime(iso) {
 // by method, so anything the server will not store must not be offered here.
 const PAYMENT_METHODS = ['cash', 'transfer', 'card', 'other']
 
+/** Identifies one open bill: a table has an id, a takeaway bill is its order. */
+function billKey(bill) {
+  return bill.kind === 'takeaway' ? `takeaway-${bill.orders[0].id}` : `table-${bill.table_id}`
+}
+
 function lineDescription(item, noPrefix) {
   const bits = [
     ...item.options.map(o => `${o.group_name}: ${o.option_name}`),
@@ -39,7 +44,7 @@ export default function Cashier() {
 
   const fetchOpen = useCallback(async () => {
     try {
-      const { data } = await api.get('/orders/tables/open')
+      const { data } = await api.get('/orders/cashier/open')
       setTables(data)
     } catch (err) {
       console.error(err)
@@ -78,7 +83,7 @@ export default function Cashier() {
     try {
       // Only the orders on the confirmation screen. One placed since then comes
       // back as outstanding rather than being marked paid for free.
-      const { data } = await api.post(`/orders/tables/${confirming.table_id}/settle`, {
+      const { data } = await api.post('/orders/cashier/settle', {
         order_ids: confirming.orders.map(o => o.id),
         payment_method: method,
       })
@@ -128,9 +133,14 @@ export default function Cashier() {
 
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {tables.map(table => (
-          <div key={table.table_id} className="bg-brand-surface rounded-xl shadow p-4 flex flex-col gap-3">
+          <div key={`${table.kind}-${table.table_id ?? table.orders[0].id}`} className="bg-brand-surface rounded-xl shadow p-4 flex flex-col gap-3">
             <div className="flex items-start justify-between gap-3">
               <div>
+                {table.kind === 'takeaway' && (
+                  <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+                    {t('common.takeaway')}
+                  </p>
+                )}
                 <p className="font-bold text-2xl text-brand-text leading-tight">{table.label}</p>
                 <p className="text-sm text-gray-500">
                   {t('cashier.orderCount', { count: table.order_count })} · {t('cashier.fromTime', { time: clockTime(table.opened_at) })}
@@ -151,20 +161,20 @@ export default function Cashier() {
                 {t('cashier.staleNote')}
               </p>
             )}
-            {!table.active && (
+            {table.kind === 'table' && !table.active && (
               <p className="text-sm text-gray-600 bg-gray-100 rounded-lg px-3 py-2">
                 {t('cashier.removedNote')}
               </p>
             )}
 
             <button
-              onClick={() => setExpanded(expanded === table.table_id ? null : table.table_id)}
+              onClick={() => setExpanded(expanded === billKey(table) ? null : billKey(table))}
               className="text-sm text-brand-600 hover:underline text-left"
             >
-              {expanded === table.table_id ? t('cashier.hideItems') : t('cashier.checkItems')}
+              {expanded === billKey(table) ? t('cashier.hideItems') : t('cashier.checkItems')}
             </button>
 
-            {expanded === table.table_id && (
+            {expanded === billKey(table) && (
               <div className="divide-y divide-gray-100 text-sm">
                 {table.orders.map(order => (
                   <div key={order.id} className="py-2">

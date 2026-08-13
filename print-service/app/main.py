@@ -174,7 +174,7 @@ def _item_lines(item: dict, currency: str, labels: dict) -> list[str]:
 
 
 def format_receipt(receipt: dict, kitchen_id: str) -> dict:
-    """The bill for one table, printed when the cashier confirms payment.
+    """The bill for one table or one takeaway order, printed on payment.
 
     Covers every order settled together, so a table that ordered three times
     gets one piece of paper rather than three.
@@ -185,8 +185,11 @@ def format_receipt(receipt: dict, kitchen_id: str) -> dict:
     labels = TICKET_LABELS.get(lang, TICKET_LABELS["en"])
 
     lines = [kitchen, labels["receipt"]]
+    # A takeaway bill has no table, so the customer is what identifies it.
     if receipt.get("table_label"):
         lines.append(f"{labels['table']}: {receipt['table_label']}")
+    elif receipt.get("customer_name"):
+        lines.append(f"{labels['name']}: {receipt['customer_name']}")
     lines.append("")
 
     for order in receipt.get("orders", []):
@@ -264,18 +267,22 @@ def process_order(message_data: bytes):
 
     # A message with no `kind` is a kitchen ticket published by an older build.
     is_receipt = order.get("kind") == "receipt"
-    if is_receipt:
-        log.info("Processing receipt %s for table %s (kitchen: %s)",
-                 order.get("bill_id"), order.get("table_label"), kitchen_id)
-    else:
-        log.info("Processing order %s for %s (kitchen: %s)", order.get("order_number"), order.get("customer_name"), kitchen_id)
+    # Named once and reused by every log line below: a receipt has no order
+    # number, and "order None not printed" tells whoever reads the log nothing.
+    what = (
+        f"receipt {order.get('bill_id')}" if is_receipt
+        else f"order {order.get('order_number')}"
+    )
+    # Takeaway has no table, so the customer is what identifies the bill.
+    who = order.get("table_label") or order.get("customer_name") or "takeaway"
+    log.info("Processing %s for %s (kitchen: %s)", what, who, kitchen_id)
 
     printer_url = get_printer_url(kitchen_id)
     if not printer_url:
-        log.warning("No printer URL configured for kitchen %s — order %s not printed", kitchen_id, order.get("order_number"))
+        log.warning("No printer URL configured for kitchen %s — %s not printed", kitchen_id, what)
         return
     if not _is_safe_printer_url(printer_url):
-        log.error("Printer URL is not a safe external URL — refusing to connect for order %s", order.get("order_number"))
+        log.error("Printer URL is not a safe external URL — refusing to connect for %s", what)
         return
 
     payload = format_receipt(order, kitchen_id) if is_receipt else format_order(order, kitchen_id)

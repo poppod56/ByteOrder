@@ -31,6 +31,7 @@ function order(id, { status = 'pending', total = 12000, items } = {}) {
 
 function openTable(overrides = {}) {
   return {
+    kind: 'table',
     table_id: 1,
     code: 'abc',
     label: 'Table 1',
@@ -48,7 +49,7 @@ function openTable(overrides = {}) {
 
 function mockOpen(tables) {
   api.get.mockImplementation(url => {
-    if (url === '/orders/tables/open') return Promise.resolve({ data: tables })
+    if (url === '/orders/cashier/open') return Promise.resolve({ data: tables })
     if (url === '/settings/currency') return Promise.resolve({ data: { value: 'THB' } })
     return Promise.reject(new Error(`Unexpected GET ${url}`))
   })
@@ -94,7 +95,7 @@ describe('Cashier', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Confirm paid' }))
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/orders/tables/1/settle', { order_ids: [1, 2], payment_method: 'cash' },
+      '/orders/cashier/settle', { order_ids: [1, 2], payment_method: 'cash' },
     ))
   })
 
@@ -108,7 +109,7 @@ describe('Cashier', () => {
     await userEvent.click(screen.getByRole('button', { name: 'Confirm paid' }))
 
     await waitFor(() => expect(api.post).toHaveBeenCalledWith(
-      '/orders/tables/1/settle', { order_ids: [1], payment_method: 'transfer' },
+      '/orders/cashier/settle', { order_ids: [1], payment_method: 'transfer' },
     ))
   })
 
@@ -183,5 +184,65 @@ describe('Cashier', () => {
     render(<Cashier />)
 
     expect(await screen.findByText(/Untouched for hours/)).toBeInTheDocument()
+  })
+})
+
+describe('Cashier takeaway', () => {
+  function takeawayBill(overrides = {}) {
+    return {
+      kind: 'takeaway',
+      table_id: null,
+      code: null,
+      label: 'Alice',
+      active: true,
+      order_count: 1,
+      total: 8000,
+      opened_at: '2026-08-12T10:00:00',
+      last_order_at: '2026-08-12T10:00:00',
+      unserved_count: 0,
+      stale: false,
+      orders: [order(7)],
+      ...overrides,
+    }
+  }
+
+  it('shows takeaway alongside the tables, named for the customer', async () => {
+    mockOpen([openTable(), takeawayBill()])
+    render(<Cashier />)
+
+    expect(await screen.findByText('Alice')).toBeInTheDocument()
+    expect(screen.getByText('Takeaway')).toBeInTheDocument()
+    expect(screen.getByText('Table 1')).toBeInTheDocument()
+  })
+
+  it('settles a takeaway bill by its own order', async () => {
+    mockOpen([takeawayBill()])
+    api.post.mockResolvedValue({ data: { bill_id: 'b1', settled: [], outstanding: [] } })
+    render(<Cashier />)
+
+    await userEvent.click(await screen.findByRole('button', { name: 'Confirm payment' }))
+    await userEvent.click(screen.getByRole('button', { name: 'Confirm paid' }))
+
+    await waitFor(() => expect(api.post).toHaveBeenCalledWith(
+      '/orders/cashier/settle', { order_ids: [7], payment_method: 'cash' },
+    ))
+  })
+
+  it('never calls a takeaway bill a removed table', async () => {
+    mockOpen([takeawayBill({ active: false })])
+    render(<Cashier />)
+
+    await screen.findByText('Alice')
+    expect(screen.queryByText(/has been removed/)).not.toBeInTheDocument()
+  })
+
+  it('opens the right bill when a table and a takeaway are both listed', async () => {
+    mockOpen([openTable(), takeawayBill()])
+    render(<Cashier />)
+
+    const [, takeawayCheck] = await screen.findAllByRole('button', { name: 'Check items' })
+    await userEvent.click(takeawayCheck)
+
+    expect(screen.getByText(/BO-007/)).toBeInTheDocument()
   })
 })
